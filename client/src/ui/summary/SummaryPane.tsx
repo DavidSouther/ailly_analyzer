@@ -17,6 +17,7 @@ import {
   CATEGORY_COLOR,
   CATEGORY_LABEL,
   CallsByTool,
+  FileAccessList,
   SectionHeading,
   StatTile,
   recordedLabel,
@@ -106,6 +107,9 @@ function SummaryContent({
       ) : (
         <>
           <CategorySplit stats={breakdown} />
+          {breakdown.fileAccesses.length === 0 ? null : (
+            <FileAccessList files={breakdown.fileAccesses} />
+          )}
           {descendants.status === LoadStatus.Loading ? (
             <p className="text-foreground-muted">Loading subagent tool calls…</p>
           ) : null}

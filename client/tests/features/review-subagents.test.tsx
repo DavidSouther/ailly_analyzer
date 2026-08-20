@@ -12,6 +12,7 @@ import {
   type SessionListItem,
   type SourceValue,
   type ToolCall,
+  isRecorded,
 } from "../../src/tauri";
 import { resetSessionsStore } from "../../src/ui/sessions/store";
 
@@ -115,12 +116,18 @@ function baseEvent(id: string, ordinal: number, kind: EventKind, sessionId: stri
   };
 }
 
+/**
+ * A tool call, carrying the file access the index attributes to a tool that
+ * named a path in its own dedicated field. Every reader here is a `Read`, so
+ * the attributed operation is always a read.
+ */
 function toolEvent(
   id: string,
   ordinal: number,
   sessionId: string,
   tool: Partial<ToolCall> & { name: string },
 ): SubagentEvent {
+  const path = tool.path;
   return {
     ...baseEvent(id, ordinal, EventKind.ToolCall, sessionId),
     tool_call: {
@@ -134,6 +141,19 @@ function toolEvent(
         ...tool,
       } satisfies ToolCall,
     },
+    files:
+      path === undefined || !isRecorded(path)
+        ? "Absent"
+        : {
+            Recorded: [
+              {
+                path: path.Recorded,
+                operation: { Recorded: "read" },
+                provenance: { Recorded: "tool" },
+                ambiguity: "Absent",
+              },
+            ],
+          },
   };
 }
 

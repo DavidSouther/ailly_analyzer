@@ -71,22 +71,37 @@ export interface SourceGroup {
   count: number;
   calls: SourceCall[];
   /**
-   * Distinct paths ranked by how often they were touched — populated only when
-   * kind === "file", and drawn from every call that recorded a path (reads and
-   * edits), not only the group's own call list.
+   * Distinct accesses ranked by how often they happened — populated only when
+   * kind === "file", and drawn from every indexed access, not only the group's
+   * own call list.
    */
-  files: FileTouch[];
+  files: FileAccess[];
 }
 
-export interface FileTouch {
+/**
+ * One row of the File access list: everything the session's events said about
+ * one path, folded together.
+ *
+ * `path` is a literal name, or — when `ambiguity` is set — the fragment a
+ * command wrote where a name would have been. The two are deliberately the same
+ * row shape with different labels: a fragment is neither hidden nor promoted to
+ * a path.
+ */
+export interface FileAccess {
   path: string;
+  /** How many recorded accesses folded into this row. */
   touches: number;
-  /** Distinct tool names that touched this file, in first-seen order. */
-  tools: string[];
+  /** Operations attempted on it (read, write, delete), in first-seen order. */
+  operations: string[];
+  /** Who claimed it (a dedicated tool field, shell analysis), first-seen order. */
+  provenances: string[];
+  /** Why this row is a fragment rather than a path, or null when it is a path. */
+  ambiguity: string | null;
 }
 
 export interface SessionSummaryStats {
   toolCallCount: number;
+  /** Distinct paths. Ambiguous fragments are accesses but not paths. */
   filesTouchedCount: number;
   duration: SourceValue<string>;
   subagentSpawnCount: SourceValue<number>;
@@ -94,7 +109,7 @@ export interface SessionSummaryStats {
   unclassified: UnclassifiedTotal;
   toolsByFrequency: ToolFrequency[];
   sources: SourceGroup[];
-  filesTouched: FileTouch[];
+  fileAccesses: FileAccess[];
 }
 
 /**
@@ -340,7 +355,7 @@ function sourceCall(
 function sourceGroup(
   kind: SourceKind,
   calls: RecordedCall[],
-  files: FileTouch[],
+  files: FileAccess[],
   results: Map<string, ToolResult[]>,
 ): SourceGroup | null {
   if (calls.length === 0 && (kind !== "file" || files.length === 0)) {
@@ -373,7 +388,7 @@ function sourceKindOf(tool: ToolCall): SourceKind | null {
 
 function sourceGroups(
   calls: RecordedCall[],
-  files: FileTouch[],
+  files: FileAccess[],
   results: Map<string, ToolResult[]>,
 ): SourceGroup[] {
   const kinds: SourceKind[] = ["shell", "file", "web"];
@@ -389,21 +404,53 @@ function sourceGroups(
     .filter((group): group is SourceGroup => group !== null);
 }
 
-function filesTouched(calls: RecordedCall[]): FileTouch[] {
-  const byPath = new Map<string, FileTouch>();
-  for (const call of calls) {
-    if (!isRecorded(call.tool.path)) {
+/**
+ * Every file access the index attributed to this session's events, folded by the
+ * name each one used.
+ *
+ * The index is the only thing that decides what a file access is: a tool that
+ * names a path and a command whose operands imply one both arrive here already
+ * attributed, so nothing is re-derived from tool arguments at read time. Events
+ * with no attributed accesses contribute nothing, which keeps a session the
+ * index has nothing to say about honestly empty rather than half-scanned.
+ */
+function fileAccesses(events: AillyEvent[]): FileAccess[] {
+  const byPath = new Map<string, FileAccess>();
+  for (const event of events) {
+    if (!isRecorded(event.files)) {
       continue;
     }
-    const path = call.tool.path.Recorded;
-    const touch = byPath.get(path) ?? { path, touches: 0, tools: [] };
-    touch.touches += 1;
-    if (!touch.tools.includes(call.tool.name)) {
-      touch.tools.push(call.tool.name);
+    for (const file of event.files.Recorded) {
+      if (file.path === "") {
+        continue;
+      }
+      const access = byPath.get(file.path) ?? {
+        path: file.path,
+        touches: 0,
+        operations: [],
+        provenances: [],
+        ambiguity: null,
+      };
+      access.touches += 1;
+      addLabel(access.operations, file.operation);
+      addLabel(access.provenances, file.provenance);
+      // A name one event resolved and another could not stays ambiguous: the
+      // reason is the more surprising half, and dropping it would claim more
+      // certainty than the session has.
+      if (access.ambiguity === null && isRecorded(file.ambiguity)) {
+        access.ambiguity = file.ambiguity.Recorded;
+      }
+      byPath.set(file.path, access);
     }
-    byPath.set(path, touch);
   }
   return [...byPath.values()].sort((a, b) => b.touches - a.touches);
+}
+
+function addLabel(labels: string[], value: SourceValue<string>): void {
+  if (!isRecorded(value) || value.Recorded === "" || labels.includes(value.Recorded)) {
+    return;
+  }
+  labels.push(value.Recorded);
 }
 
 /** A span between the first and last recorded timestamps, when there are two. */
@@ -447,17 +494,17 @@ function subagentSpawnCount(events: AillyEvent[]): SourceValue<number> {
 export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
   const calls = recordedCalls(events);
   const { categories, unclassified } = categoryTotals(calls);
-  const files = filesTouched(calls);
+  const files = fileAccesses(events);
   const results = resultsByCallId(events);
   return {
     toolCallCount: calls.length,
-    filesTouchedCount: files.length,
+    filesTouchedCount: files.filter((file) => file.ambiguity === null).length,
     duration: sessionDuration(events),
     subagentSpawnCount: subagentSpawnCount(events),
     categories,
     unclassified,
     toolsByFrequency: toolsByFrequency(calls, results),
     sources: sourceGroups(calls, files, results),
-    filesTouched: files,
+    fileAccesses: files,
   };
 }

@@ -8,7 +8,7 @@ import { Badge } from "../badges/badge";
 import { BadgeColor } from "../colors";
 import { shouldShowToolCwd } from "../conversation/format";
 import { toolIcon } from "../toolIcons";
-import type { FileTouch, SourceCall, ToolCategory, ToolFrequency } from "./rollup";
+import type { FileAccess, SourceCall, ToolCategory, ToolFrequency } from "./rollup";
 
 /**
  * The vocabulary every lens over a session's tool calls shares: labelled stat
@@ -173,34 +173,77 @@ function CallRow({ call, sessionCwd }: { call: SourceCall; sessionCwd: string | 
   );
 }
 
-export function FileAccessList({ files }: { files: FileTouch[] }) {
+/**
+ * An operation is an open string from the index rather than a closed union, so
+ * an operation this table has not seen still renders — in the neutral colour
+ * instead of vanishing.
+ */
+const OPERATION_COLOR: Record<string, BadgeColor> = {
+  read: BadgeColor.MINT,
+  write: BadgeColor.SKY,
+  delete: BadgeColor.BERRY,
+};
+
+/**
+ * The files a session reached, whether a tool named them or a recorded command
+ * implied them.
+ *
+ * Provenance is on every row because the two are not equally certain: a tool
+ * field is what the harness recorded, while a shell row is what a command's
+ * operands say it would have touched. A row whose name the shell would have
+ * expanded is labelled ambiguous and shown with its reason, so it reads as the
+ * open question it is rather than as a file that was definitely touched.
+ */
+export function FileAccessList({ files }: { files: FileAccess[] }) {
   const shown = files.slice(0, LIST_CAP);
   return (
-    <>
-      <ul aria-label="Files touched" className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
+      <SectionHeading>File access</SectionHeading>
+      <ul aria-label="File access" className="flex flex-col gap-1.5">
         {shown.map((file) => (
-          <li key={file.path} className="flex min-w-0 items-center gap-2">
-            <FileText size={14} className="shrink-0 text-foreground-muted" />
-            <span
-              title={file.path}
-              className="truncate-start min-w-0 flex-1 font-mono text-foreground text-xs"
-            >
-              {file.path}
-            </span>
-            <div className="flex shrink-0 gap-1">
-              {file.tools.map((tool) => (
-                <Badge key={tool} color={BadgeColor.METAL} textSize="sm">
-                  {tool}
-                </Badge>
-              ))}
+          <li key={file.path} className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText size={14} className="shrink-0 text-foreground-muted" />
+              <span
+                title={file.path}
+                className="truncate-start min-w-0 flex-1 font-mono text-foreground text-xs"
+              >
+                {file.path}
+              </span>
+              <div className="flex shrink-0 gap-1">
+                {file.operations.map((operation) => (
+                  <Badge
+                    key={operation}
+                    color={OPERATION_COLOR[operation] ?? BadgeColor.METAL_DARK}
+                    textSize="sm"
+                  >
+                    {operation}
+                  </Badge>
+                ))}
+                {file.provenances.map((provenance) => (
+                  <Badge key={provenance} color={BadgeColor.METAL} textSize="sm">
+                    {provenance}
+                  </Badge>
+                ))}
+                {file.ambiguity === null ? null : (
+                  <Badge color={BadgeColor.AMBER} textSize="sm">
+                    ambiguous
+                  </Badge>
+                )}
+              </div>
+              <span className="shrink-0 text-foreground-muted text-xs">
+                {file.touches} {file.touches === 1 ? "touch" : "touches"}
+              </span>
             </div>
-            <span className="shrink-0 text-foreground-muted text-xs">
-              {file.touches} {file.touches === 1 ? "touch" : "touches"}
-            </span>
+            {file.ambiguity === null ? null : (
+              <span className="pl-[22px] text-foreground-muted text-xs italic">
+                {file.ambiguity}
+              </span>
+            )}
           </li>
         ))}
       </ul>
       <MoreRow hidden={files.length - shown.length} noun="file" />
-    </>
+    </div>
   );
 }
