@@ -2,13 +2,13 @@
 
 Build the product vertically in this order. Each task should leave a usable, tested seam for the next one. Keep the app local-first and read-only throughout.
 
-Completed work (Tauri shell, harness loader, SQLite index, Journeys 1–2 and 4–6, captured tool output, tool-call edits, tool-call icons, rescan/harness chips, session timestamps, system light/dark) is omitted; only remaining work is listed.
+Completed work (Tauri shell, harness loader, SQLite index, Journeys 1–2 and 4–6, captured tool output, tool-call edits, tool-call icons, rescan/harness chips, session timestamps, system light/dark, shell-derived file access) is omitted; only remaining work is listed.
 
 ## Cross-lens jump to transcript
 
 Conversation already exposes `event-*` anchors and Tokens already lands on a response row. Treat **jump from any tool-summary detail to that event in Conversation** as one feature, not a pile of one-off links.
 
-- From Summary: a tool-frequency row, an individual call, a Sources/file-touch row, and a file in File access.
+- From Summary: a tool-frequency row, an individual call, a Sources/file-touch row, and a file in File access. A File access row may be an ambiguous shell fragment rather than a path, so the jump target is the call that produced the evidence.
 - From Tokens: a spend moment, spawn, or chart point.
 - From Subagents: a spawn or a call inside a spawn.
 - Landing reuses `useLandingTarget` / `event-*`: switch to Conversation, focus and highlight the row, do not replay on a later tab click.
@@ -33,6 +33,41 @@ In scope to decide during that design, not to pre-solve here:
 - Add side-by-side comparison for the dimensions relevant to wrong-turn investigation.
 - Surface recurring files, subagent types, and pertinent call patterns.
 - Preserve drill-down links from collection patterns to individual sessions.
+
+## Deferred from shell-derived file access (2026-08-20-B-shell-io)
+
+The `shell-access` crate reads recorded commands and the Summary File access list
+labels every row with an operation and its provenance. What that design left open:
+
+- **Operand-table maintenance has no path.** `shell-access/src/table.rs` was
+  built by measuring one static corpus of local transcripts. A utility missing
+  from it contributes no rows and lands in a visible unattributed count, which
+  is a one-time display rather than a way to notice the table going stale as new
+  harnesses, CLIs, and shell conventions appear. Decide how the table is
+  revisited and how a miss is surfaced to a maintainer, not only to a reviewer.
+- **Rows are ranked by nothing.** The list distinguishes common from rare not at
+  all, so a single write to `.env`, `.ssh/`, a git hook, or a credentials file
+  reads the same as the hundredth `cat`. Decide whether consequence should
+  outrank frequency before adding any ordering or emphasis.
+- **A provenance filter or split view** over the File access list: one list ships
+  now, deliberately, and splitting tool-recorded from shell-derived evidence (or
+  filtering by operation) was left until the single list is used in anger.
+- **Shells other than POSIX.** `ShellLanguage` names the seam and
+  `AutoDetect` refuses what it cannot read, so fish, zsh-specific, and PowerShell
+  rules can arrive without changing the record shape. Nothing implements them.
+- `client/src/ui/summary/rollup.ts` **dead code** — `stats.sources` is unread by
+  the UI, and `SourceCall` shaping is also reachable through `toolsByFrequency`.
+  Removing it means rewriting the eight unit tests that use it as their access
+  point for call/result pairing, working directory, and chunked output; that is a
+  change about those tests rather than about any feature.
+- `shell-access/tests/posix.rs` **duplicate coverage** — four of its seventeen
+  tests pin shapes the corpus also pins. Two copies, not three, and each reads
+  differently: the unit test states the contract in place, the corpus test binds
+  the checked-in data. Left as an aroma.
+- **Rebuilding an absolute path from a recorded working directory stays out.**
+  `cwd` is carried as call context and never joined onto an operand. Reversing
+  that would report a fact no command made; it needs a product-boundary decision,
+  not an implementation.
 
 ## Deferred from Journey 4 (2026-08-14-A-review-token-usage)
 
@@ -104,7 +139,10 @@ In scope to decide during that design, not to pre-solve here:
   than JSON, so the tool name and raw snippet surface but the command itself
   would be inferred. Locally these are a large slice of Codex activity (~6.5k
   `exec` and ~1.7k `apply_patch` records), so a parser for that snippet shape
-  is worth revisiting.
+  is worth revisiting. Now the largest remaining coverage gap for shell-derived
+  file access, and a bounded one: 524 local Codex sessions turn on it, and 6,563
+  of 6,591 snippets carry a literal `cmd` string. Worth doing next as a sibling
+  of 2026-08-20-B-shell-io.
 - The argv-array `shell` call shape (`command: ["bash", "-lc", "…"]`) is
   handled defensively but does not appear anywhere in the local corpus, so it
   is unverified against real data.
