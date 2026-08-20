@@ -121,7 +121,10 @@ const CATEGORY_TABLE: Record<string, ToolCategory> = {
   AskUserQuestion: "other",
   WebFetch: "other",
   WebSearch: "other",
-  // Codex's names.
+  // Codex's names. `exec` is the name on a `custom_tool_call`, whose command
+  // text lives in a JavaScript snippet this product does not yet recover — but
+  // the call is still an exec, and reading as unclassified said otherwise.
+  exec: "exec",
   exec_command: "exec",
   write_stdin: "exec",
   read_file: "read",

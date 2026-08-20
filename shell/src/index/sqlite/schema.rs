@@ -3,7 +3,10 @@
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-pub const SCHEMA_VERSION: i64 = 9;
+/// Bumped to 10 when `FileReference` gained provenance and ambiguity: an index
+/// built before that carries no file accesses at all, and a half-populated File
+/// access list is worse than a rebuild.
+pub const SCHEMA_VERSION: i64 = 10;
 
 pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let mut conn = Connection::open(path)?;

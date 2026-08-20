@@ -4,6 +4,7 @@ mod aggregate;
 #[cfg(test)]
 pub(crate) mod conformance;
 mod domain;
+mod files;
 mod memory;
 mod pricing;
 mod reconcile;
