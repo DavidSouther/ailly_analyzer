@@ -8,3 +8,7 @@ edition = "2021"
 [dependencies]
 tree-sitter = "0.25"
 tree-sitter-bash = "0.25"
+
+[dev-dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_yaml_ng = "0.10.0"
