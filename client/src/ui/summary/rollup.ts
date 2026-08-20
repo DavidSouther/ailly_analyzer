@@ -483,7 +483,7 @@ function subagentSpawnCount(events: AillyEvent[]): SourceValue<number> {
   return count === 0 ? "Absent" : { Recorded: count };
 }
 
-/** The single fold this feature performs over one session's event page. */
+/** Every Summary statistic, from one pass over a session's event page. */
 export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
   const calls = recordedCalls(events);
   const { categories, unclassified } = categoryTotals(calls);

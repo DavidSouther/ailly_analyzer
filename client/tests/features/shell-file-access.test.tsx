@@ -231,8 +231,8 @@ describe("Reviewing the files a session's shell commands touched", () => {
 
     expect(accessRow(fileAccess, TOOL_WRITE)).toHaveTextContent(/write/i);
 
-    // The same two operations, recovered from one recorded command. These are
-    // the rows that did not exist before this feature.
+    // The same two operations, recovered from one recorded command and labelled
+    // as evidence about that command rather than as a tool's own claim.
     const shellRead = accessRow(fileAccess, SHELL_READ);
     expect(shellRead).toHaveTextContent(/read/i);
     expect(shellRead).toHaveTextContent(/shell/i);
