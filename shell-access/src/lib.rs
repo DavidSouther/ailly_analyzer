@@ -6,6 +6,24 @@
 //! filesystem, or joins a working directory onto an operand. A word the shell
 //! would have expanded before any utility saw it is reported as ambiguous
 //! rather than resolved into a path or dropped.
+//!
+//! ```
+//! use shell_access::{AccessOperation, Classifier};
+//!
+//! let accesses: Vec<_> = Classifier::POSIX
+//!     .with_cwd("/work/app")
+//!     .classify("cat config/base.yml >> build/out.env")
+//!     .flatten()
+//!     .collect();
+//!
+//! assert_eq!(accesses[0].op, AccessOperation::Read);
+//! assert_eq!(accesses[0].path, "config/base.yml");
+//! assert_eq!(accesses[1].op, AccessOperation::Write);
+//! assert_eq!(accesses[1].path, "build/out.env");
+//! ```
+
+mod posix;
+mod table;
 
 use std::path::{Path, PathBuf};
 
@@ -83,7 +101,11 @@ impl AccessOperation {
     /// The word this operation is reported as, shared by every consumer so the
     /// index and the UI cannot drift into two vocabularies.
     pub fn as_str(self) -> &'static str {
-        todo!()
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Delete => "delete",
+        }
     }
 }
 
@@ -91,7 +113,12 @@ impl AmbiguityReason {
     /// Why the fragment stayed a fragment, phrased for a reader looking at the
     /// row rather than at the grammar.
     pub fn description(self) -> &'static str {
-        todo!()
+        match self {
+            Self::Glob => "glob not expanded",
+            Self::Expansion => "expansion not resolved",
+            Self::CommandSubstitution => "command substitution not run",
+            Self::ExpandedHeredoc => "heredoc body expanded",
+        }
     }
 }
 
@@ -137,7 +164,47 @@ impl Classifier {
         &'a self,
         command: &'a str,
     ) -> impl Iterator<Item = Result<FileAccess, ClassificationError>> + 'a {
-        let _ = command;
-        Vec::new().into_iter()
+        match self.resolved_language(command) {
+            Ok(()) => posix::classify(command, self.cwd.as_deref()),
+            Err(error) => vec![Err(error)],
+        }
+        .into_iter()
     }
+
+    /// POSIX, or the error to report instead of reading a language this crate
+    /// does not implement under POSIX rules.
+    fn resolved_language(&self, command: &str) -> Result<(), ClassificationError> {
+        match &self.language {
+            ShellLanguage::Posix => Ok(()),
+            ShellLanguage::AutoDetect => match interpreter(command) {
+                Some(named) if !is_posix_shell(&named) => {
+                    Err(ClassificationError::UnsupportedLanguage { language: named })
+                }
+                _ => Ok(()),
+            },
+            ShellLanguage::Unsupported(language) => Err(ClassificationError::UnsupportedLanguage {
+                language: language.clone(),
+            }),
+        }
+    }
+}
+
+/// The interpreter a leading shebang names, by its last path component. Nothing
+/// else is treated as evidence of a language: guessing one from a fragment of
+/// syntax would refuse POSIX commands that merely look unusual.
+fn interpreter(command: &str) -> Option<String> {
+    let line = command.strip_prefix("#!")?.lines().next()?;
+    let mut words = line.split_whitespace();
+    let first = words.next()?;
+    // `#!/usr/bin/env bash` names the shell in its argument, not its own path.
+    let named = if first.ends_with("/env") || first == "env" {
+        words.next()?
+    } else {
+        first
+    };
+    Some(named.rsplit('/').next().unwrap_or(named).to_string())
+}
+
+fn is_posix_shell(name: &str) -> bool {
+    matches!(name, "sh" | "bash" | "dash" | "ksh" | "ash" | "zsh")
 }
