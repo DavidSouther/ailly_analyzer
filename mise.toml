@@ -12,7 +12,7 @@ run = ["mise -C client run format", "mise -C shell run format"]
 
 [tasks.check]
 description = "Run client and shell static analysis"
-run = ["mise -C client run check", "mise -C shell run check"]
+run = ["mise -C client run check", "mise -C shell run check", "mise -C shell-access run check"]
 
 [tasks.test]
 description = "Run client and shell tests"

@@ -1,0 +1,3 @@
+[tasks.check]
+description = "Verify the deidentified command corpus"
+run = "python3 corpus/verify_corpus.py"
