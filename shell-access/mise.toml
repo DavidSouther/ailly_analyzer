@@ -1,3 +1,15 @@
+[tasks.format]
+description = "Format Rust"
+run = "cargo fmt"
+
 [tasks.check]
-description = "Verify the deidentified command corpus"
-run = "python3 corpus/verify_corpus.py"
+description = "Verify the command corpus, then run Clippy with warnings denied"
+run = ["python3 corpus/verify_corpus.py", "cargo clippy -- -D warnings"]
+
+[tasks.test]
+description = "Run the classifier tests"
+run = "cargo test"
+
+[tasks.lint]
+description = "Lint Rust with Clippy"
+run = "cargo clippy -- -D warnings"

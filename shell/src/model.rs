@@ -125,10 +125,21 @@ impl Subagent {
     }
 }
 
+/// One file a session attempted to access. `path` may be a literal name or, when
+/// `ambiguity` is recorded, the unresolved fragment a command wrote in its
+/// place — the two are different kinds of claim and stay distinguishable.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FileReference {
     pub path: String,
     pub operation: SourceValue<String>,
+    /// Where the claim came from: a harness's own dedicated file field, or
+    /// analysis of recorded command text. A consumer must be able to tell a
+    /// recorded path from read evidence about a command.
+    pub provenance: SourceValue<String>,
+    /// Why `path` could not be resolved into a name, for the fragments where
+    /// the shell would have expanded the word before any utility saw it.
+    /// Absent for a literal path.
+    pub ambiguity: SourceValue<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

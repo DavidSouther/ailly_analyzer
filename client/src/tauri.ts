@@ -187,10 +187,21 @@ export interface Subagent {
   child_session_id: SourceValue<string>;
 }
 
-/** Mirrors the Rust `FileReference`. */
+/**
+ * Mirrors the Rust `FileReference`: one file a session attempted to access.
+ * `path` is a literal name, or — when `ambiguity` is recorded — the unresolved
+ * fragment the command wrote in its place, which is a different kind of claim.
+ */
 export interface FileReference {
   path: string;
   operation: SourceValue<string>;
+  /**
+   * Where the claim came from: `tool` for a harness's own dedicated file field,
+   * `shell` for evidence read out of recorded command text.
+   */
+  provenance: SourceValue<string>;
+  /** Why `path` stayed a fragment. Unrecorded for a literal path. */
+  ambiguity: SourceValue<string>;
 }
 
 /**
