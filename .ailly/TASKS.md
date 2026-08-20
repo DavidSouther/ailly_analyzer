@@ -16,16 +16,6 @@ Conversation already exposes `event-*` anchors and Tokens already lands on a res
 
 Replaces the deferred "Wire summary / drill-down views into the `event-*` anchors" and "File-first route from Summary File access" bullets.
 
-## Shell I/O: reads and writes inside Bash
-
-File access today only counts a path when the tool recorded `path` / `file_path`. Most interaction is shell (`cat`, `sed`, `awk`, stdin pipes, redirects). Parse recorded Bash/command text with an **off-the-shelf bash parsing library** (do not hand-roll a shell grammar).
-
-- Identify **reads** (e.g. `cat`, `sed`, `awk`, stdin pipes, input redirects) and **writes** (output redirects, `tee`, in-place flags that the parse can attribute) inside Bash / exec blocks.
-- Keep inferred paths as recorded-from-command, not as facts about the disk; skip or mark ambiguous fragments rather than guessing.
-- A quick review of just the files the shell read from and wrote to (distinct from Read/Write/Edit tool paths, or merged with them and labelled by source).
-- From that review, jump to the transcript point of the originating call — via the unified jump above, not a second navigation scheme.
-- Codex `custom_tool_call` snippets still need a command recovered before those calls can be parsed (see Deferred from the tool-call command/cwd bugfix).
-
 ## Full-app search (own design)
 
 Session-list free text and `harness:` chips are not product search. Searching is **full app** and needs its own design pass before build (scope, what is indexed, result shape, how a hit opens a session and lands on an event).
