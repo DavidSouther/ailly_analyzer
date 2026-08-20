@@ -215,9 +215,10 @@ describe("summarizeSession", () => {
     expect(shell?.calls[0]?.detail).toBe("rg -l LegacySession");
     expect(web?.calls[0]?.detailRecorded).toBe(false);
     expect(web?.calls[0]?.detail).toMatch(/not recorded/i);
-    expect(file?.label).toBe("File access");
-    expect(file?.files.map((entry) => entry.path)).toEqual([SUSPECT_FILE, "docs/auth/runbook.md"]);
-    expect(file?.count).toBe(2);
+    // Which files were reached is `fileAccesses`, not this group: these are the
+    // calls that named one.
+    expect(file?.label).toBe("File tools");
+    expect(file?.count).toBe(3);
   });
 
   it("groups a file's accesses under one row, keeping every label it collected", () => {

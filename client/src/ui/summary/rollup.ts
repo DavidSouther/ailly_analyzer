@@ -65,17 +65,15 @@ export interface SourceCall {
   outputIsError: boolean;
 }
 
+/**
+ * Calls grouped by the kind of outside fact they brought in. Which files were
+ * reached is a separate question, answered once by `fileAccesses`.
+ */
 export interface SourceGroup {
   kind: SourceKind;
   label: string;
   count: number;
   calls: SourceCall[];
-  /**
-   * Distinct accesses ranked by how often they happened — populated only when
-   * kind === "file", and drawn from every indexed access, not only the group's
-   * own call list.
-   */
-  files: FileAccess[];
 }
 
 /**
@@ -155,7 +153,9 @@ const CATEGORY_ORDER: ToolCategory[] = ["exec", "edit", "read", "other"];
 
 const SOURCE_META: Record<SourceKind, { label: string; missingDetail: string }> = {
   shell: { label: "Shell output", missingDetail: "Command not recorded" },
-  file: { label: "File access", missingDetail: "Path not recorded" },
+  // "File access" names the rendered list of files. This group holds the calls
+  // that named one, which is a different thing.
+  file: { label: "File tools", missingDetail: "Path not recorded" },
   web: { label: "Web / API", missingDetail: "Target not recorded" },
 };
 
@@ -355,19 +355,17 @@ function sourceCall(
 function sourceGroup(
   kind: SourceKind,
   calls: RecordedCall[],
-  files: FileAccess[],
   results: Map<string, ToolResult[]>,
 ): SourceGroup | null {
-  if (calls.length === 0 && (kind !== "file" || files.length === 0)) {
+  if (calls.length === 0) {
     return null;
   }
   const sourceCalls = calls.map((call) => sourceCall(call, kind, results));
   return {
     kind,
     label: SOURCE_META[kind].label,
-    count: kind === "file" ? files.length : sourceCalls.length,
+    count: sourceCalls.length,
     calls: sourceCalls,
-    files: kind === "file" ? files : [],
   };
 }
 
@@ -386,18 +384,13 @@ function sourceKindOf(tool: ToolCall): SourceKind | null {
   return null;
 }
 
-function sourceGroups(
-  calls: RecordedCall[],
-  files: FileAccess[],
-  results: Map<string, ToolResult[]>,
-): SourceGroup[] {
+function sourceGroups(calls: RecordedCall[], results: Map<string, ToolResult[]>): SourceGroup[] {
   const kinds: SourceKind[] = ["shell", "file", "web"];
   return kinds
     .map((kind) =>
       sourceGroup(
         kind,
         calls.filter((call) => sourceKindOf(call.tool) === kind),
-        files,
         results,
       ),
     )
@@ -504,7 +497,7 @@ export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
     categories,
     unclassified,
     toolsByFrequency: toolsByFrequency(calls, results),
-    sources: sourceGroups(calls, files, results),
+    sources: sourceGroups(calls, results),
     fileAccesses: files,
   };
 }
