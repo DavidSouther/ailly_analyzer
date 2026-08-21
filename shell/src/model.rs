@@ -140,6 +140,9 @@ pub struct FileReference {
     /// the shell would have expanded the word before any utility saw it.
     /// Absent for a literal path.
     pub ambiguity: SourceValue<String>,
+    /// The working directory recorded for this access, as identity/context only.
+    /// Never joined onto `path`.
+    pub cwd: SourceValue<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

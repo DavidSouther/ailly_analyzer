@@ -63,12 +63,14 @@ function access(
   operation: string,
   provenance: string,
   ambiguity: string | null = null,
+  cwd: string | null = null,
 ): FileReference {
   return {
     path,
     operation: { Recorded: operation },
     provenance: { Recorded: provenance },
     ambiguity: ambiguity === null ? "Absent" : { Recorded: ambiguity },
+    cwd: cwd === null ? "Absent" : { Recorded: cwd },
   };
 }
 
@@ -226,6 +228,7 @@ describe("summarizeSession", () => {
 
     expect(stats.fileAccesses[0]).toEqual({
       path: SUSPECT_FILE,
+      cwd: null,
       touches: 2,
       operations: ["read", "write"],
       provenances: ["tool"],
@@ -250,7 +253,7 @@ describe("summarizeSession", () => {
     );
   });
 
-  it("keeps a name one event resolved and another could not marked ambiguous", () => {
+  it("keeps resolved and unresolved claims for the same path as separate identities", () => {
     const stats = summarizeSession([
       toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: 'cat "$LOG"' } }, [
         access("$LOG", "read", "shell", "parameter expansion not resolved"),
@@ -260,8 +263,26 @@ describe("summarizeSession", () => {
       ]),
     ]);
 
-    expect(stats.fileAccesses[0]?.ambiguity).toBe("parameter expansion not resolved");
-    expect(stats.filesTouchedCount).toBe(0);
+    expect(stats.fileAccesses).toHaveLength(2);
+    expect(stats.fileAccesses.find((file) => file.ambiguity !== null)?.ambiguity).toBe(
+      "parameter expansion not resolved",
+    );
+    expect(stats.filesTouchedCount).toBe(1);
+  });
+
+  it("keeps the same relative path under different cwds as separate rows", () => {
+    const stats = summarizeSession([
+      toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: "cat config.toml" } }, [
+        access("config.toml", "read", "shell", null, "/work/app"),
+      ]),
+      toolEvent("evt-2", 2, { name: "Bash", command: { Recorded: "cat config.toml" } }, [
+        access("config.toml", "read", "shell", null, "/work/other"),
+      ]),
+    ]);
+
+    expect(stats.fileAccesses).toHaveLength(2);
+    expect(stats.filesTouchedCount).toBe(2);
+    expect(stats.fileAccesses.map((file) => file.cwd).sort()).toEqual(["/work/app", "/work/other"]);
   });
 
   it("carries a call's working directory only when the source recorded one", () => {

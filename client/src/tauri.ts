@@ -202,6 +202,11 @@ export interface FileReference {
   provenance: SourceValue<string>;
   /** Why `path` stayed a fragment. Unrecorded for a literal path. */
   ambiguity: SourceValue<string>;
+  /**
+   * Working directory recorded for this access, as identity/context only.
+   * Never joined onto `path`.
+   */
+  cwd: SourceValue<string>;
 }
 
 /**

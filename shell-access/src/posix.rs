@@ -7,7 +7,7 @@
 use std::path::Path;
 use tree_sitter::{Node, Parser};
 
-use crate::table::{self, Positionals, Utility, Wrapper};
+use crate::table::{self, FlagValue, Positionals, Utility, Wrapper};
 use crate::{AccessOperation, AmbiguityReason, ClassificationError, FileAccess};
 
 /// How deep a `sh -c` inside a `sh -c` is followed before the walk gives up.
@@ -100,7 +100,9 @@ impl Walk<'_> {
     fn command(&mut self, node: Node, source: &str, depth: usize) {
         let name = command_name(node, source).unwrap_or_default();
         match self.resolve(&name, operands(node), source) {
-            Resolved::Known(utility, operands) => self.attribute(utility, &operands, source, false),
+            Resolved::Known(utility, operands) => {
+                self.attribute(utility, &operands, source, false);
+            }
             Resolved::Nested(inner) => self.read(&inner, depth + 1),
             Resolved::Unattributed => {}
         }
@@ -172,29 +174,51 @@ impl Walk<'_> {
                 flags_over = true;
                 continue;
             }
-            if let Some((_, replacement)) = utility
-                .positional_flags
-                .iter()
-                .find(|(flag, _)| *flag == text.as_str())
-            {
-                positionals = *replacement;
+
+            let (flag_text, attached) = split_flag(&text);
+            let Some(spec) = table::find_flag(utility.flags, flag_text) else {
+                // An unknown flag still ends the word inventory for this pass;
+                // it is not itself a path.
+                continue;
+            };
+
+            if let Some(replacement) = spec.positionals {
+                positionals = replacement;
             }
-            if utility
-                .in_place_flags
-                .iter()
-                .any(|flag| matches_flag(&text, flag))
-            {
+            if spec.in_place {
                 in_place = true;
             }
-            if utility.value_flags.contains(&text.as_str()) {
-                index += 1;
+
+            match spec.value {
+                FlagValue::None => {}
+                FlagValue::Ignored => {
+                    if attached.is_none() {
+                        index += 1;
+                    }
+                }
+                FlagValue::ModeChanging(replacement) => {
+                    positionals = replacement;
+                    if attached.is_none() {
+                        index += 1;
+                    }
+                }
+                FlagValue::Read => {
+                    if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
+                        self.record_path(path, AccessOperation::Read, scripting, None);
+                    }
+                }
+                FlagValue::Write => {
+                    if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
+                        self.record_path(path, AccessOperation::Write, scripting, None);
+                    }
+                }
             }
         }
 
         let total = paths.len();
         for (position, operand) in paths.into_iter().enumerate() {
             if let Some(op) = operation(positionals, position, total, in_place) {
-                self.record(operand, source, op, utility.scripting || scripting);
+                self.record(operand, source, op, scripting);
             }
         }
     }
@@ -252,11 +276,24 @@ impl Walk<'_> {
         if path.is_empty() {
             return;
         }
+        self.record_path(path, op, scripting, ambiguity(operand, source));
+    }
+
+    fn record_path(
+        &mut self,
+        path: String,
+        op: AccessOperation,
+        scripting: bool,
+        ambiguity: Option<AmbiguityReason>,
+    ) {
+        if path.is_empty() {
+            return;
+        }
         self.out.push(Ok(FileAccess {
             op,
             path,
             cwd: self.cwd.map(Path::to_path_buf),
-            ambiguity: ambiguity(operand, source),
+            ambiguity,
             scripting,
         }));
     }
@@ -289,6 +326,38 @@ impl Walk<'_> {
             }
         }
     }
+}
+
+/// The value a file-valued flag took: the attached `--flag=value` form, or the
+/// next operand when the forms are separate.
+fn flag_value_path(
+    attached: Option<&str>,
+    operands: &[Node],
+    index: &mut usize,
+    source: &str,
+) -> Option<String> {
+    if let Some(attached) = attached {
+        return Some(attached.to_string());
+    }
+    let operand = *operands.get(*index)?;
+    *index += 1;
+    let path = literal(operand, source);
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// Splits `--flag=value` (and `-o=value`) into the flag spelling and its
+/// attached value. Separate ` -o out ` forms leave the value for the caller.
+fn split_flag(text: &str) -> (&str, Option<&str>) {
+    if text.starts_with("--") || (text.starts_with('-') && text.contains('=')) {
+        if let Some((name, value)) = text.split_once('=') {
+            return (name, Some(value));
+        }
+    }
+    (text, None)
 }
 
 /// Which operation the positional at `position` is, for this utility's shape.
@@ -412,7 +481,8 @@ fn peel<'t>(
         let text = literal(operands[index], source);
         index += 1;
         if is_flag(&text) {
-            if text != "--" && value_flags.contains(&text.as_str()) {
+            let (flag_text, attached) = split_flag(&text);
+            if flag_text != "--" && value_flags.contains(&flag_text) && attached.is_none() {
                 index += 1;
             }
             continue;
@@ -446,12 +516,6 @@ fn command_string(operands: &[Node], source: &str) -> Option<String> {
 
 fn is_flag(text: &str) -> bool {
     text.starts_with('-') && text.len() > 1
-}
-
-/// A flag matches its own spelling, and a short flag also matches the suffixed
-/// form GNU utilities accept (`-i.bak` for `-i`).
-fn matches_flag(text: &str, flag: &str) -> bool {
-    text == flag || (flag.len() == 2 && text.starts_with(flag))
 }
 
 /// Why an operand is not a literal name, or `None` when it is one.

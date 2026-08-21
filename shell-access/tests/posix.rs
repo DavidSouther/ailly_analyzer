@@ -241,6 +241,24 @@ fn unparsable_text_is_an_error_rather_than_a_partial_attribution() {
     assert_eq!(records, [Err(ClassificationError::Parse)]);
 }
 
+/// A later unreadable fragment is `Err` at that point; earlier commands still
+/// contribute their accesses.
+#[test]
+fn a_compound_command_with_a_later_parse_error_keeps_the_prefix() {
+    let records: Vec<_> = Classifier::POSIX
+        .classify("cat config/base.yml && echo 'unterminated")
+        .collect();
+    assert!(matches!(records.last(), Some(Err(ClassificationError::Parse))));
+    assert_eq!(
+        records
+            .iter()
+            .filter_map(|record| record.as_ref().ok())
+            .map(|access| (access.op, access.path.as_str()))
+            .collect::<Vec<_>>(),
+        [(Read, "config/base.yml")]
+    );
+}
+
 /// A language this crate does not implement is refused rather than read under
 /// POSIX rules, so a later fish or PowerShell implementation changes nothing a
 /// caller already consumes.
@@ -282,5 +300,52 @@ fn a_recorded_directory_is_never_joined_onto_an_operand() {
     assert_eq!(
         access.cwd.as_deref(),
         Some(std::path::Path::new("/work/other"))
+    );
+}
+
+#[test]
+fn sort_output_flag_is_a_write_in_separate_and_attached_forms() {
+    assert_eq!(
+        attributed("sort -o build/out.env src/a.txt"),
+        [
+            (Write, "build/out.env".to_string()),
+            (Read, "src/a.txt".to_string()),
+        ]
+    );
+    assert_eq!(
+        attributed("sort --output=build/out.env src/a.txt"),
+        [
+            (Write, "build/out.env".to_string()),
+            (Read, "src/a.txt".to_string()),
+        ]
+    );
+    assert_eq!(
+        attributed("sort --output build/out.env src/a.txt"),
+        [
+            (Write, "build/out.env".to_string()),
+            (Read, "src/a.txt".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn grep_file_flag_is_a_read() {
+    assert_eq!(
+        attributed("grep -f patterns.txt src/a.txt"),
+        [
+            (Read, "patterns.txt".to_string()),
+            (Read, "src/a.txt".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn cp_target_directory_flag_is_a_write() {
+    assert_eq!(
+        attributed("cp -t build/ config/base.yml"),
+        [
+            (Write, "build/".to_string()),
+            (Read, "config/base.yml".to_string()),
+        ]
     );
 }

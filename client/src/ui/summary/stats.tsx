@@ -200,48 +200,63 @@ export function FileAccessList({ files }: { files: FileAccess[] }) {
     <div className="flex flex-col gap-1.5">
       <SectionHeading>File access</SectionHeading>
       <ul aria-label="File access" className="flex flex-col gap-1.5">
-        {shown.map((file) => (
-          <li key={file.path} className="flex min-w-0 flex-col gap-0.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <FileText size={14} className="shrink-0 text-foreground-muted" />
-              <span
-                title={file.path}
-                className="truncate-start min-w-0 flex-1 font-mono text-foreground text-xs"
-              >
-                {file.path}
-              </span>
-              <div className="flex shrink-0 gap-1">
-                {file.operations.map((operation) => (
-                  <Badge
-                    key={operation}
-                    color={OPERATION_COLOR[operation] ?? BadgeColor.METAL_DARK}
-                    textSize="sm"
-                  >
-                    {operation}
-                  </Badge>
-                ))}
-                {file.provenances.map((provenance) => (
-                  <Badge key={provenance} color={BadgeColor.METAL} textSize="sm">
-                    {provenance}
-                  </Badge>
-                ))}
-                {file.ambiguity === null ? null : (
-                  <Badge color={BadgeColor.AMBER} textSize="sm">
-                    ambiguous
-                  </Badge>
-                )}
+        {shown.map((file) => {
+          const showCwd = shouldShowToolCwd({
+            cwd: file.cwd,
+            path: file.path,
+            sessionCwd: null,
+          });
+          return (
+            <li
+              key={`${file.path}\0${file.cwd ?? ""}\0${file.ambiguity ?? ""}`}
+              className="flex min-w-0 flex-col gap-0.5"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <FileText size={14} className="shrink-0 text-foreground-muted" />
+                <span
+                  title={file.path}
+                  className="truncate-start min-w-0 flex-1 font-mono text-foreground text-xs"
+                >
+                  {file.path}
+                </span>
+                <div className="flex shrink-0 gap-1">
+                  {file.operations.map((operation) => (
+                    <Badge
+                      key={operation}
+                      color={OPERATION_COLOR[operation] ?? BadgeColor.METAL_DARK}
+                      textSize="sm"
+                    >
+                      {operation}
+                    </Badge>
+                  ))}
+                  {file.provenances.map((provenance) => (
+                    <Badge key={provenance} color={BadgeColor.METAL} textSize="sm">
+                      {provenance}
+                    </Badge>
+                  ))}
+                  {file.ambiguity === null ? null : (
+                    <Badge color={BadgeColor.AMBER} textSize="sm">
+                      ambiguous
+                    </Badge>
+                  )}
+                </div>
+                <span className="shrink-0 text-foreground-muted text-xs">
+                  {file.touches} {file.touches === 1 ? "touch" : "touches"}
+                </span>
               </div>
-              <span className="shrink-0 text-foreground-muted text-xs">
-                {file.touches} {file.touches === 1 ? "touch" : "touches"}
-              </span>
-            </div>
-            {file.ambiguity === null ? null : (
-              <span className="pl-[22px] text-foreground-muted text-xs italic">
-                {file.ambiguity}
-              </span>
-            )}
-          </li>
-        ))}
+              {showCwd ? (
+                <span className="pl-[22px] font-mono text-foreground-muted text-xs">
+                  {file.cwd}
+                </span>
+              ) : null}
+              {file.ambiguity === null ? null : (
+                <span className="pl-[22px] text-foreground-muted text-xs italic">
+                  {file.ambiguity}
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
       <MoreRow hidden={files.length - shown.length} noun="file" />
     </div>

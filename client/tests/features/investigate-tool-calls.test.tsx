@@ -110,6 +110,7 @@ function touched(path: string, operation: string): FileReference[] {
       operation: { Recorded: operation },
       provenance: { Recorded: "tool" },
       ambiguity: "Absent",
+      cwd: "Absent",
     },
   ];
 }

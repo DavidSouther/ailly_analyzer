@@ -78,7 +78,11 @@ export interface SourceGroup {
 
 /**
  * One row of the File access list: everything the session's events said about
- * one path, folded together.
+ * one file identity, folded together.
+ *
+ * Identity is `(path, cwd, ambiguity)` — cwd is recorded context and never
+ * joined onto `path`. Two relative operands with different working directories
+ * are two rows.
  *
  * `path` is a literal name, or — when `ambiguity` is set — the fragment a
  * command wrote where a name would have been. The two are deliberately the same
@@ -87,6 +91,8 @@ export interface SourceGroup {
  */
 export interface FileAccess {
   path: string;
+  /** Recorded working directory for this identity, or null when unrecorded. */
+  cwd: string | null;
   /** How many recorded accesses folded into this row. */
   touches: number;
   /** Operations attempted on it (read, write, delete), in first-seen order. */
@@ -398,8 +404,8 @@ function sourceGroups(calls: RecordedCall[], results: Map<string, ToolResult[]>)
 }
 
 /**
- * Every file access the index attributed to this session's events, folded by the
- * name each one used.
+ * Every file access the index attributed to this session's events, folded by
+ * identity `(path, cwd, ambiguity)`.
  *
  * The index is the only thing that decides what a file access is: a tool that
  * names a path and a command whose operands imply one both arrive here already
@@ -408,7 +414,7 @@ function sourceGroups(calls: RecordedCall[], results: Map<string, ToolResult[]>)
  * index has nothing to say about honestly empty rather than half-scanned.
  */
 function fileAccesses(events: AillyEvent[]): FileAccess[] {
-  const byPath = new Map<string, FileAccess>();
+  const byIdentity = new Map<string, FileAccess>();
   for (const event of events) {
     if (!isRecorded(event.files)) {
       continue;
@@ -417,8 +423,12 @@ function fileAccesses(events: AillyEvent[]): FileAccess[] {
       if (file.path === "") {
         continue;
       }
-      const access = byPath.get(file.path) ?? {
+      const cwd = isRecorded(file.cwd) ? file.cwd.Recorded : null;
+      const ambiguity = isRecorded(file.ambiguity) ? file.ambiguity.Recorded : null;
+      const key = `${file.path}\0${cwd ?? ""}\0${ambiguity ?? ""}`;
+      const access = byIdentity.get(key) ?? {
         path: file.path,
+        cwd,
         touches: 0,
         operations: [],
         provenances: [],
@@ -430,13 +440,13 @@ function fileAccesses(events: AillyEvent[]): FileAccess[] {
       // A name one event resolved and another could not stays ambiguous: the
       // reason is the more surprising half, and dropping it would claim more
       // certainty than the session has.
-      if (access.ambiguity === null && isRecorded(file.ambiguity)) {
-        access.ambiguity = file.ambiguity.Recorded;
+      if (access.ambiguity === null && ambiguity !== null) {
+        access.ambiguity = ambiguity;
       }
-      byPath.set(file.path, access);
+      byIdentity.set(key, access);
     }
   }
-  return [...byPath.values()].sort((a, b) => b.touches - a.touches);
+  return [...byIdentity.values()].sort((a, b) => b.touches - a.touches);
 }
 
 function addLabel(labels: string[], value: SourceValue<string>): void {

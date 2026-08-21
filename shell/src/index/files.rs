@@ -47,11 +47,15 @@ fn from_dedicated_field(tool: &ToolCall) -> Option<FileReference> {
         operation: tool_operation(&tool.name),
         provenance: SourceValue::Recorded(TOOL.to_string()),
         ambiguity: SourceValue::Absent,
+        cwd: match &tool.cwd {
+            SourceValue::Recorded(cwd) => SourceValue::Recorded(cwd.clone()),
+            _ => SourceValue::Absent,
+        },
     })
 }
 
 /// The accesses a recorded command attempted. A command the grammar could not
-/// read contributes nothing rather than a partial attribution.
+/// read is dropped at that point in the stream; earlier successes stay.
 fn from_recorded_command(tool: &ToolCall) -> Vec<FileReference> {
     let SourceValue::Recorded(command) = &tool.command else {
         return Vec::new();
@@ -69,6 +73,10 @@ fn from_recorded_command(tool: &ToolCall) -> Vec<FileReference> {
             provenance: SourceValue::Recorded(SHELL.to_string()),
             ambiguity: match access.ambiguity {
                 Some(reason) => SourceValue::Recorded(reason.description().to_string()),
+                None => SourceValue::Absent,
+            },
+            cwd: match access.cwd {
+                Some(cwd) => SourceValue::Recorded(cwd.display().to_string()),
                 None => SourceValue::Absent,
             },
         })
@@ -143,6 +151,17 @@ mod tests {
             operation: SourceValue::Recorded(operation.to_string()),
             provenance: SourceValue::Recorded(SHELL.to_string()),
             ambiguity: SourceValue::Absent,
+            cwd: SourceValue::Absent,
+        }
+    }
+
+    fn shell_at(path: &str, operation: &str, cwd: &str) -> FileReference {
+        FileReference {
+            path: path.to_string(),
+            operation: SourceValue::Recorded(operation.to_string()),
+            provenance: SourceValue::Recorded(SHELL.to_string()),
+            ambiguity: SourceValue::Absent,
+            cwd: SourceValue::Recorded(cwd.to_string()),
         }
     }
 
@@ -168,6 +187,7 @@ mod tests {
                 operation: SourceValue::Recorded("read".to_string()),
                 provenance: SourceValue::Recorded(TOOL.to_string()),
                 ambiguity: SourceValue::Absent,
+                cwd: SourceValue::Absent,
             }]
         );
     }
@@ -182,6 +202,10 @@ mod tests {
         });
 
         assert_eq!(files(&event)[0].path, "config/base.yml");
+        assert_eq!(
+            files(&event)[0],
+            shell_at("config/base.yml", "read", "/work/app")
+        );
     }
 
     #[test]
@@ -233,5 +257,15 @@ mod tests {
         });
 
         assert_eq!(attributed_files(&event), SourceValue::Absent);
+    }
+
+    #[test]
+    fn a_compound_parse_failure_keeps_accesses_from_the_prefix() {
+        let event = tool_call("Bash", |tool| {
+            tool.command =
+                SourceValue::Recorded("cat config/base.yml && cat 'unterminated".to_string());
+        });
+
+        assert_eq!(files(&event), [shell("config/base.yml", "read")]);
     }
 }

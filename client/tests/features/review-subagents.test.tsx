@@ -151,6 +151,7 @@ function toolEvent(
                 operation: { Recorded: "read" },
                 provenance: { Recorded: "tool" },
                 ambiguity: "Absent",
+                cwd: "Absent",
               },
             ],
           },

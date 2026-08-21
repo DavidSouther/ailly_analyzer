@@ -66,6 +66,7 @@ interface FileAccess {
   operation: SourceValue<string>;
   provenance: SourceValue<string>;
   ambiguity: SourceValue<string>;
+  cwd: SourceValue<string>;
 }
 
 /** A path a dedicated tool field named, so the claim needs no interpretation. */
@@ -75,16 +76,18 @@ function fromTool(path: string, operation: string): FileAccess {
     operation: { Recorded: operation },
     provenance: { Recorded: "tool" },
     ambiguity: "Absent",
+    cwd: "Absent",
   };
 }
 
 /** A path read out of recorded command text — evidence, not a disk fact. */
-function fromShell(path: string, operation: string): FileAccess {
+function fromShell(path: string, operation: string, cwd: string | null = null): FileAccess {
   return {
     path,
     operation: { Recorded: operation },
     provenance: { Recorded: "shell" },
     ambiguity: "Absent",
+    cwd: cwd === null ? "Absent" : { Recorded: cwd },
   };
 }
 
@@ -95,6 +98,7 @@ function ambiguous(fragment: string, operation: string, reason: string): FileAcc
     operation: { Recorded: operation },
     provenance: { Recorded: "shell" },
     ambiguity: { Recorded: reason },
+    cwd: "Absent",
   };
 }
 
@@ -261,5 +265,45 @@ describe("Reviewing the files a session's shell commands touched", () => {
     expect(within(fileAccess).getAllByRole("listitem")).toHaveLength(7);
     const tile = within(summary).getByRole("group", { name: /files touched/i });
     expect(within(tile).getByText("6")).toBeInTheDocument();
+  });
+
+  it("keeps the same relative path under different cwds as two rows", async () => {
+    eventsBySession = {
+      [SESSION.id]: [
+        toolEvent(
+          "evt-1",
+          1,
+          {
+            name: "Bash",
+            command: { Recorded: "cat config.toml" },
+            cwd: { Recorded: "/work/app" },
+          },
+          [fromShell("config.toml", "read", "/work/app")],
+        ),
+        toolEvent(
+          "evt-2",
+          2,
+          {
+            name: "Bash",
+            command: { Recorded: "cat config.toml" },
+            cwd: { Recorded: "/work/other" },
+          },
+          [fromShell("config.toml", "read", "/work/other")],
+        ),
+      ],
+    };
+
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const fileAccess = within(summary).getByRole("list", { name: /file access/i });
+    const rows = within(fileAccess).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent(/config\.toml/);
+    expect(rows[1]).toHaveTextContent(/config\.toml/);
+    expect(fileAccess).toHaveTextContent("/work/app");
+    expect(fileAccess).toHaveTextContent("/work/other");
+    const tile = within(summary).getByRole("group", { name: /files touched/i });
+    expect(within(tile).getByText("2")).toBeInTheDocument();
   });
 });
