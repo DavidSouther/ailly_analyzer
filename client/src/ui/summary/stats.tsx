@@ -435,10 +435,7 @@ export function FilesystemList({ files }: { files: FileAccess[] }) {
             sessionCwd: null,
           });
           return (
-            <li
-              key={file.id}
-              className="flex min-w-0 flex-col gap-0.5"
-            >
+            <li key={file.id} className="flex min-w-0 flex-col gap-0.5">
               <div className="flex min-w-0 items-center gap-2">
                 {isDirectory(file) ? (
                   <Folder size={14} className="shrink-0 text-foreground-muted" />
