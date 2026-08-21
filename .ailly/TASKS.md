@@ -73,7 +73,7 @@ design left open:
   Removing it means rewriting the eight unit tests that use it as their access
   point for call/result pairing, working directory, and chunked output; that is a
   change about those tests rather than about any feature.
-- `shell-access/tests/posix.rs` **duplicate coverage** — four of its seventeen
+- `shell-access/tests/posix.rs` **duplicate coverage** — several of its
   tests pin shapes the corpus also pins. Two copies, not three, and each reads
   differently: the unit test states the contract in place, the corpus test binds
   the checked-in data. Left as an aroma.
