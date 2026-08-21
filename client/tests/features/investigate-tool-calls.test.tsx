@@ -107,6 +107,7 @@ function touched(path: string, operation: string): FileReference[] {
   return [
     {
       path,
+      target: { Recorded: "file" },
       operation: { Recorded: operation },
       provenance: { Recorded: "tool" },
       ambiguity: "Absent",
@@ -235,9 +236,9 @@ describe("Journey 2: Investigate a single session's tool calls", () => {
     expect(within(categories).getByText(/edit.*17%/i)).toBeInTheDocument();
     expect(within(categories).getByText(/unclassified.*17%/i)).toBeInTheDocument();
 
-    // Calls by tool, ranked, with raw harness names preserved. Expanding a row
-    // reveals the individual calls that used to live under Sources.
-    const byTool = within(summary()).getByRole("list", { name: /calls by tool/i });
+    // Tools, ranked, with raw harness names preserved. Expanding a row reveals
+    // the individual calls it made.
+    const byTool = within(summary()).getByRole("list", { name: /^tools$/i });
     const toolRows = within(byTool).getAllByRole("listitem");
     expect(toolRows[0]).toHaveTextContent(/Read/);
     expect(toolRows[0]).toHaveTextContent(/2 calls/);

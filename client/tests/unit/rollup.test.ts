@@ -67,6 +67,7 @@ function access(
 ): FileReference {
   return {
     path,
+    target: { Recorded: "file" },
     operation: { Recorded: operation },
     provenance: { Recorded: provenance },
     ambiguity: ambiguity === null ? "Absent" : { Recorded: ambiguity },
@@ -227,7 +228,9 @@ describe("summarizeSession", () => {
     const stats = summarizeSession(EVENTS);
 
     expect(stats.fileAccesses[0]).toEqual({
+      id: `file\0${SUSPECT_FILE}\0\0`,
       path: SUSPECT_FILE,
+      target: "file",
       cwd: null,
       touches: 2,
       operations: ["read", "write"],

@@ -36,8 +36,9 @@ In scope to decide during that design, not to pre-solve here:
 
 ## Deferred from shell-derived file access (2026-08-20-B-shell-io)
 
-The `shell-access` crate reads recorded commands and the Summary File access list
-labels every row with an operation and its provenance. What that design left open:
+The `shell-access` crate reads recorded commands and the Summary Filesystem list
+labels every row with a target, an operation, and its provenance. What that
+design left open:
 
 - **Operand-table maintenance has no path.** `shell-access/src/table.rs` was
   built by measuring one static corpus of local transcripts. A utility missing
@@ -45,13 +46,25 @@ labels every row with an operation and its provenance. What that design left ope
   is a one-time display rather than a way to notice the table going stale as new
   harnesses, CLIs, and shell conventions appear. Decide how the table is
   revisited and how a miss is surfaced to a maintainer, not only to a reviewer.
+- **A mislabelled target is quieter than a missing row.** A utility outside the
+  table contributes nothing and is counted; a directory-taking utility the table
+  does not know (`rsync`, `zip -r`, `git -C`, `stat`) has its operand reported as
+  a *file*, which is a wrong claim with nothing counting it. Decide whether the
+  table's default should be "unknown kind" rather than "file".
+- **`find`'s expression is dropped whole, including its destructive half.**
+  `find . -name '*.log' -delete` and `find . -exec rm {} \;` report one directory
+  read of the root and no delete at all, so a destructive command reads as a
+  read. The design's own survey named `find -exec` peeling and `find -delete` as
+  a delete; neither is implemented. Bounded: the expression already stops the
+  operand walk, so this is about reading `-delete` and `-exec` out of it.
 - **Rows are ranked by nothing.** The list distinguishes common from rare not at
   all, so a single write to `.env`, `.ssh/`, a git hook, or a credentials file
   reads the same as the hundredth `cat`. Decide whether consequence should
   outrank frequency before adding any ordering or emphasis.
-- **A provenance filter or split view** over the File access list: one list ships
-  now, deliberately, and splitting tool-recorded from shell-derived evidence (or
-  filtering by operation) was left until the single list is used in anger.
+- **Filesystem filter state is not in the URL.** The text filter and the
+  three-state chips live in component state, so a narrowed view is neither
+  shareable nor durable across a reload — the same gap the session-list search
+  chips have, and worth solving once for both.
 - **Shells other than POSIX.** `ShellLanguage` names the seam and
   `AutoDetect` refuses what it cannot read, so fish, zsh-specific, and PowerShell
   rules can arrive without changing the record shape. Nothing implements them.

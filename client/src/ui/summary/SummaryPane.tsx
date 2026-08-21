@@ -17,7 +17,7 @@ import {
   CATEGORY_COLOR,
   CATEGORY_LABEL,
   CallsByTool,
-  FileAccessList,
+  FilesystemList,
   SectionHeading,
   StatTile,
   recordedLabel,
@@ -69,7 +69,7 @@ function SummaryContent({
   const [includeSubagentTools, setIncludeSubagentTools] = useState(false);
   const descendants = useDescendantEvents(events, includeSubagentTools && canIncludeSubagentTools);
   // Every breakdown below the tiles reads from this fold, so the category split
-  // and Calls by tool always describe the same set of calls.
+  // and the Tools list always describe the same set of calls.
   const breakdown = useMemo(
     () => statsIncludingDescendants(stats, events, descendants),
     [stats, events, descendants],
@@ -108,7 +108,7 @@ function SummaryContent({
         <>
           <CategorySplit stats={breakdown} />
           {breakdown.fileAccesses.length === 0 ? null : (
-            <FileAccessList files={breakdown.fileAccesses} />
+            <FilesystemList files={breakdown.fileAccesses} />
           )}
           {descendants.status === LoadStatus.Loading ? (
             <p className="text-foreground-muted">Loading subagent tool calls…</p>
@@ -132,7 +132,7 @@ function subagentSpawnsLabel(value: SourceValue<number>): string {
 
 /**
  * The Subagent Spawns tile, with an optional toggle that pulls every descendant
- * session's tools into Calls by Tool. The tile's count stays parent-only —
+ * session's tools into the Tools list. The tile's count stays parent-only —
  * including children changes the breakdown, not how many times this session
  * itself delegated.
  */

@@ -31,6 +31,7 @@ KNOWN_TAGS = {
     "copy",
     "cwd-override",
     "delete",
+    "directory",
     "expansion",
     "fd-merge",
     "glob",
@@ -62,6 +63,7 @@ REQUIRED_TAGS = {
     "copy": "cp/mv read all but the last operand and write the last",
     "in-place": "an in-place flag turns a read operand into a write",
     "delete": "rm/rmdir delete rather than write",
+    "directory": "ls, find, du, tree, mkdir, and rmdir name a directory",
     "wrapper": "env, sudo, and bash -lc carry an inner command",
     "pipeline": "each pipeline stage is classified on its own",
     "glob": "an unexpanded glob is ambiguous, not a path",
@@ -75,7 +77,15 @@ REQUIRED_TAGS = {
     "cwd-override": "a case may record a different directory than its file",
 }
 
-ALLOWED_EXPECT_KEYS = {"reads", "writes", "deletes", "ambiguous", "scripting", "error"}
+ALLOWED_EXPECT_KEYS = {
+    "reads",
+    "writes",
+    "deletes",
+    "directories",
+    "ambiguous",
+    "scripting",
+    "error",
+}
 PATH_LIST_KEYS = ("reads", "writes", "deletes")
 OPERATIONS = {"read", "write", "delete"}
 AMBIGUITY_REASONS = {"glob", "expansion", "command_substitution", "expanded_heredoc"}
@@ -174,6 +184,15 @@ def check_expect(case_id: str, command: str, expect: object) -> list[str]:
         else:
             problems += check_ambiguous(case_id, command, fragments)
 
+    if "directories" in expect:
+        directories = expect["directories"]
+        if not isinstance(directories, list):
+            problems.append(f"{case_id}: expect.directories must be a list")
+        elif not directories:
+            problems.append(f"{case_id}: drop expect.directories rather than writing an empty list")
+        else:
+            problems += check_targets(case_id, command, "directories", directories)
+
     if "scripting" in expect and expect["scripting"] is not True:
         problems.append(f"{case_id}: expect.scripting is only ever true; drop it otherwise")
 
@@ -202,6 +221,27 @@ def check_ambiguous(case_id: str, command: str, fragments: list) -> list[str]:
         if fragment["reason"] not in AMBIGUITY_REASONS:
             problems.append(
                 f"{case_id}: ambiguous reason must be one of {sorted(AMBIGUITY_REASONS)}"
+            )
+    return problems
+
+
+def check_targets(
+    case_id: str, command: str, target: str, accesses: list
+) -> list[str]:
+    problems = []
+    for access in accesses:
+        if not isinstance(access, dict) or set(access) != {"path", "op"}:
+            problems.append(
+                f"{case_id}: each expect.{target} entry needs exactly path and op"
+            )
+            continue
+        if access["path"] not in command:
+            problems.append(
+                f"{case_id}: {target} path {access['path']!r} does not appear in the command"
+            )
+        if access["op"] not in OPERATIONS:
+            problems.append(
+                f"{case_id}: {target} op must be one of {sorted(OPERATIONS)}"
             )
     return problems
 

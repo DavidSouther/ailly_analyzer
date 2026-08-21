@@ -11,7 +11,7 @@
 //! staying a fragment.
 
 use crate::model::{Event, FileReference, SourceValue, ToolCall};
-use shell_access::Classifier;
+use shell_access::{AccessTarget, Classifier};
 
 /// A path the harness named in a dedicated field.
 const TOOL: &str = "tool";
@@ -44,6 +44,7 @@ fn from_dedicated_field(tool: &ToolCall) -> Option<FileReference> {
     };
     Some(FileReference {
         path: path.clone(),
+        target: SourceValue::Recorded(AccessTarget::of_path(path).as_str().to_string()),
         operation: tool_operation(&tool.name),
         provenance: SourceValue::Recorded(TOOL.to_string()),
         ambiguity: SourceValue::Absent,
@@ -69,6 +70,7 @@ fn from_recorded_command(tool: &ToolCall) -> Vec<FileReference> {
         .flatten()
         .map(|access| FileReference {
             path: access.path,
+            target: SourceValue::Recorded(access.target.as_str().to_string()),
             operation: SourceValue::Recorded(access.op.as_str().to_string()),
             provenance: SourceValue::Recorded(SHELL.to_string()),
             ambiguity: match access.ambiguity {
@@ -148,6 +150,7 @@ mod tests {
     fn shell(path: &str, operation: &str) -> FileReference {
         FileReference {
             path: path.to_string(),
+            target: SourceValue::Recorded("file".to_string()),
             operation: SourceValue::Recorded(operation.to_string()),
             provenance: SourceValue::Recorded(SHELL.to_string()),
             ambiguity: SourceValue::Absent,
@@ -158,6 +161,7 @@ mod tests {
     fn shell_at(path: &str, operation: &str, cwd: &str) -> FileReference {
         FileReference {
             path: path.to_string(),
+            target: SourceValue::Recorded("file".to_string()),
             operation: SourceValue::Recorded(operation.to_string()),
             provenance: SourceValue::Recorded(SHELL.to_string()),
             ambiguity: SourceValue::Absent,
@@ -184,6 +188,7 @@ mod tests {
             files(&event),
             [FileReference {
                 path: "packages/auth/src/session.ts".to_string(),
+                target: SourceValue::Recorded("file".to_string()),
                 operation: SourceValue::Recorded("read".to_string()),
                 provenance: SourceValue::Recorded(TOOL.to_string()),
                 ambiguity: SourceValue::Absent,
@@ -267,5 +272,33 @@ mod tests {
         });
 
         assert_eq!(files(&event), [shell("config/base.yml", "read")]);
+    }
+
+    #[test]
+    fn a_shell_directory_is_not_indexed_as_a_file() {
+        let event = tool_call("Bash", |tool| {
+            tool.command = SourceValue::Recorded("ls .".to_string());
+        });
+
+        let access = &files(&event)[0];
+        assert_eq!(access.path, ".");
+        assert_eq!(
+            access.target,
+            SourceValue::Recorded("directory".to_string())
+        );
+    }
+
+    #[test]
+    fn a_tool_path_that_spells_a_directory_is_indexed_as_one() {
+        let event = tool_call("Grep", |tool| {
+            tool.path = SourceValue::Recorded("packages/auth/".to_string());
+        });
+
+        let access = &files(&event)[0];
+        assert_eq!(access.path, "packages/auth/");
+        assert_eq!(
+            access.target,
+            SourceValue::Recorded("directory".to_string())
+        );
     }
 }

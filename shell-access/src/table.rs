@@ -1,5 +1,5 @@
-//! Which of a utility's operands name files, and which of them are something
-//! else entirely.
+//! Which of a utility's operands name files or directories, and which are
+//! something else entirely.
 //!
 //! A parser inventories words; it does not know that `sed`'s first operand is a
 //! script and `tee`'s is a destination. That knowledge is a table, and no
@@ -27,6 +27,14 @@ pub(crate) enum Positionals {
     Write,
     /// Every operand is removed.
     Delete,
+    /// Every operand is a directory the utility reads. Listing and traversal
+    /// utilities take a directory as their subject, so a bare `src` here is the
+    /// directory `src` rather than a guess that it is a file.
+    ReadDirectory,
+    /// Every operand is a directory the utility creates.
+    WriteDirectory,
+    /// Every operand is a directory the utility removes.
+    DeleteDirectory,
     /// No operand names a file.
     None,
 }
@@ -43,6 +51,8 @@ pub(crate) enum FlagValue {
     Read,
     /// The value names a file that is written.
     Write,
+    /// The value names a directory that is written to.
+    WriteDirectory,
     /// The next word is not a file, and remaining positionals follow this policy.
     ModeChanging(Positionals),
 }
@@ -87,6 +97,10 @@ pub(crate) struct Utility {
     /// True when this utility runs a script handed to it inline. Its script's
     /// internals are not attributed; redirects around it still are.
     pub(crate) scripting: bool,
+    /// True when only the leading operands are paths: the first word this table
+    /// does not declare opens an expression, as `-name` does in
+    /// `find src -name '*.rs'`, and nothing past it is a name.
+    pub(crate) expression: bool,
 }
 
 /// A command that carries another command.
@@ -106,6 +120,7 @@ const fn utility(positionals: Positionals, flags: &'static [FlagSpec]) -> Utilit
         positionals,
         flags,
         scripting: false,
+        expression: false,
     }
 }
 
@@ -184,6 +199,7 @@ const SED: Utility = Utility {
         },
     ],
     scripting: false,
+    expression: false,
 };
 
 const AWK: Utility = Utility {
@@ -197,6 +213,7 @@ const AWK: Utility = Utility {
         flag("--field-separator", FlagValue::Ignored),
     ],
     scripting: false,
+    expression: false,
 };
 
 const GREP: Utility = Utility {
@@ -227,6 +244,7 @@ const GREP: Utility = Utility {
         flag("--colour", FlagValue::Ignored),
     ],
     scripting: false,
+    expression: false,
 };
 
 const RIPGREP: Utility = Utility {
@@ -263,6 +281,7 @@ const RIPGREP: Utility = Utility {
         flag("--pre", FlagValue::Ignored),
     ],
     scripting: false,
+    expression: false,
 };
 
 const JQ: Utility = Utility {
@@ -275,6 +294,7 @@ const JQ: Utility = Utility {
         flag("--argjson", FlagValue::Ignored),
     ],
     scripting: false,
+    expression: false,
 };
 
 const TEE: Utility = utility(Positionals::Write, &[]);
@@ -306,15 +326,84 @@ const TRUNCATE: Utility = utility(
 const COPY: Utility = Utility {
     positionals: Positionals::ReadThenWriteLast,
     flags: &[
-        flag_mode("-t", FlagValue::Write, Positionals::Read),
+        flag_mode("-t", FlagValue::WriteDirectory, Positionals::Read),
         flag("-S", FlagValue::Ignored),
-        flag_mode("--target-directory", FlagValue::Write, Positionals::Read),
+        flag_mode(
+            "--target-directory",
+            FlagValue::WriteDirectory,
+            Positionals::Read,
+        ),
         flag("--suffix", FlagValue::Ignored),
     ],
     scripting: false,
+    expression: false,
 };
 
 const REMOVE: Utility = utility(Positionals::Delete, &[]);
+const MAKE_DIRECTORY: Utility = utility(Positionals::WriteDirectory, &[]);
+const REMOVE_DIRECTORY: Utility = utility(Positionals::DeleteDirectory, &[]);
+
+/// `ls` takes a file as readily as a directory, but a directory is what it is
+/// for, and its operand is reported as one. That is a claim about the kind of
+/// thing named, not about what is on disk — which this crate never checks.
+const LIST: Utility = utility(
+    Positionals::ReadDirectory,
+    &[
+        flag("-I", FlagValue::Ignored),
+        flag("-w", FlagValue::Ignored),
+        flag("--ignore", FlagValue::Ignored),
+        flag("--width", FlagValue::Ignored),
+        flag("--format", FlagValue::Ignored),
+        flag("--sort", FlagValue::Ignored),
+        flag("--time-style", FlagValue::Ignored),
+        flag("--block-size", FlagValue::Ignored),
+        flag("--color", FlagValue::Ignored),
+    ],
+);
+
+/// `find`'s operands are the roots it walks, and everything from its first
+/// undeclared word on is an expression: `-name '*.rs'` is a test and `*.rs` is
+/// its argument, not a path. The leading options that may precede the roots are
+/// declared so they do not end the roots early.
+const FIND: Utility = Utility {
+    positionals: Positionals::ReadDirectory,
+    flags: &[
+        flag("-L", FlagValue::None),
+        flag("-H", FlagValue::None),
+        flag("-P", FlagValue::None),
+        flag("-E", FlagValue::None),
+        flag("-d", FlagValue::None),
+        flag("-s", FlagValue::None),
+        flag("-x", FlagValue::None),
+    ],
+    scripting: false,
+    expression: true,
+};
+
+const DISK_USAGE: Utility = utility(
+    Positionals::ReadDirectory,
+    &[
+        flag("-d", FlagValue::Ignored),
+        flag("-t", FlagValue::Ignored),
+        flag("-B", FlagValue::Ignored),
+        flag("-I", FlagValue::Ignored),
+        flag("--max-depth", FlagValue::Ignored),
+        flag("--threshold", FlagValue::Ignored),
+        flag("--block-size", FlagValue::Ignored),
+        flag("--exclude", FlagValue::Ignored),
+    ],
+);
+
+const TREE: Utility = utility(
+    Positionals::ReadDirectory,
+    &[
+        flag("-L", FlagValue::Ignored),
+        flag("-I", FlagValue::Ignored),
+        flag("-P", FlagValue::Ignored),
+        flag("-o", FlagValue::Write),
+        flag("--filelimit", FlagValue::Ignored),
+    ],
+);
 
 /// An inline interpreter. Its positionals are not attributed at all: a script
 /// path is not something this crate opens, and script internals are explicitly
@@ -331,6 +420,7 @@ const INTERPRETER: Utility = Utility {
         flag("--command", FlagValue::Ignored),
     ],
     scripting: true,
+    expression: false,
 };
 
 const PREFIX: Wrapper = Wrapper::Prefix {
@@ -359,7 +449,13 @@ pub(crate) fn lookup(name: &str) -> Option<&'static Utility> {
         "touch" => &TOUCH,
         "truncate" => &TRUNCATE,
         "cp" | "mv" | "install" | "ln" => &COPY,
-        "rm" | "rmdir" | "unlink" | "shred" => &REMOVE,
+        "rm" | "unlink" | "shred" => &REMOVE,
+        "ls" | "dir" | "vdir" => &LIST,
+        "find" => &FIND,
+        "du" => &DISK_USAGE,
+        "tree" => &TREE,
+        "mkdir" => &MAKE_DIRECTORY,
+        "rmdir" => &REMOVE_DIRECTORY,
         "python" | "python3" | "perl" | "ruby" | "node" | "deno" | "bun" | "php" | "lua"
         | "Rscript" | "osascript" => &INTERPRETER,
         _ => return None,

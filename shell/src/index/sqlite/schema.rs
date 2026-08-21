@@ -3,10 +3,12 @@
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-/// Bumped to 11 when `FileReference` gained `cwd`: an index built before that
-/// folds relative paths across working directories, and a half-populated File
-/// access list is worse than a rebuild.
-pub const SCHEMA_VERSION: i64 = 11;
+/// Every reader trusts the values stored here rather than re-deriving them from
+/// the transcript, so any change to how a transcript becomes an indexed value
+/// has to bump this. A mismatch means the index is deleted and rebuilt, never
+/// migrated: an index written under older rules holds answers the current rules
+/// would not give, and half-old derived values are worse than a rebuild.
+pub const SCHEMA_VERSION: i64 = 13;
 
 pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let mut conn = Connection::open(path)?;

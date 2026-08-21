@@ -188,12 +188,15 @@ export interface Subagent {
 }
 
 /**
- * Mirrors the Rust `FileReference`: one file a session attempted to access.
+ * Mirrors the Rust `FileReference`: one filesystem target a session attempted
+ * to access.
  * `path` is a literal name, or — when `ambiguity` is recorded — the unresolved
  * fragment the command wrote in its place, which is a different kind of claim.
  */
 export interface FileReference {
   path: string;
+  /** The object this access is known to target: `file` or `directory`. */
+  target: SourceValue<string>;
   operation: SourceValue<string>;
   /**
    * Where the claim came from: `tool` for a harness's own dedicated file field,

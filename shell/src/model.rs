@@ -131,6 +131,9 @@ impl Subagent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FileReference {
     pub path: String,
+    /// The filesystem object this access names: `file` or `directory`. A claim
+    /// about what the source meant, never a check against a disk.
+    pub target: SourceValue<String>,
     pub operation: SourceValue<String>,
     /// Where the claim came from: a harness's own dedicated file field, or
     /// analysis of recorded command text. A consumer must be able to tell a

@@ -50,6 +50,17 @@ pub enum AccessOperation {
     Delete,
 }
 
+/// What kind of filesystem object an operand names, as far as the command text
+/// says. Two things can settle it: the utility, since `ls` and `find` take a
+/// directory as their subject, and the spelling, since `.` and a trailing slash
+/// resolve nowhere else. Neither consults a disk, so this is what the command
+/// meant rather than what was there.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessTarget {
+    File,
+    Directory,
+}
+
 /// Why an operand could not be resolved into a path. Each of these is a word the
 /// shell expands before the utility runs, so the text in the command is not the
 /// name of a file.
@@ -71,11 +82,12 @@ pub enum ClassificationError {
     },
 }
 
-/// One attempted access. `op` and `path` are always present; every other field
-/// is omitted unless it carries information.
+/// One attempted access. An unset `cwd` or `ambiguity` means the classifier had
+/// nothing to say, not that a default applied.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FileAccess {
     pub op: AccessOperation,
+    pub target: AccessTarget,
     /// The operand as the command wrote it. Relative stays relative.
     pub path: String,
     /// The directory the classifier was told the command ran in. Copied here as
@@ -105,6 +117,28 @@ impl AccessOperation {
             Self::Read => "read",
             Self::Write => "write",
             Self::Delete => "delete",
+        }
+    }
+}
+
+impl AccessTarget {
+    /// The word this target is reported as, shared by every consumer so the
+    /// index and the UI cannot drift into two vocabularies.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Directory => "directory",
+        }
+    }
+
+    /// What a path's own spelling settles: `.`, `..`, and a trailing slash can
+    /// only name a directory, whichever utility wrote them. Every other operand
+    /// reads as a file, which is as much as the text alone supports.
+    pub fn of_path(path: &str) -> Self {
+        if matches!(path, "." | "..") || path.ends_with('/') {
+            Self::Directory
+        } else {
+            Self::File
         }
     }
 }

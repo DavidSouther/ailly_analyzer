@@ -16,7 +16,9 @@ use std::fs;
 use std::path::Path;
 
 use serde::Deserialize;
-use shell_access::{AccessOperation, AmbiguityReason, ClassificationError, Classifier, FileAccess};
+use shell_access::{
+    AccessOperation, AccessTarget, AmbiguityReason, ClassificationError, Classifier, FileAccess,
+};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/corpus");
 
@@ -55,6 +57,8 @@ struct Expect {
     #[serde(default)]
     ambiguous: Vec<Fragment>,
     #[serde(default)]
+    directories: Vec<TargetAccess>,
+    #[serde(default)]
     scripting: bool,
     error: Option<String>,
 }
@@ -65,6 +69,13 @@ struct Fragment {
     path: String,
     op: String,
     reason: String,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct TargetAccess {
+    path: String,
+    op: String,
 }
 
 /// Every case in every corpus file, each already carrying the working directory
@@ -134,7 +145,9 @@ fn classify(case: &Case) -> (Vec<FileAccess>, Vec<ClassificationError>) {
 fn paths(accesses: &[FileAccess], op: AccessOperation) -> Vec<String> {
     accesses
         .iter()
-        .filter(|access| access.op == op && access.ambiguity.is_none())
+        .filter(|access| {
+            access.target == AccessTarget::File && access.op == op && access.ambiguity.is_none()
+        })
         .map(|access| access.path.clone())
         .collect()
 }
@@ -148,6 +161,19 @@ fn fragments(accesses: &[FileAccess]) -> Vec<Fragment> {
                 op: access.op.as_str().to_string(),
                 reason: reason(access.ambiguity?).to_string(),
             })
+        })
+        .collect()
+}
+
+/// `ambiguous` is the single home for every fragment, whatever it targets, so a
+/// directory the shell would have expanded is named once rather than twice.
+fn directories(accesses: &[FileAccess]) -> Vec<TargetAccess> {
+    accesses
+        .iter()
+        .filter(|access| access.target == AccessTarget::Directory && access.ambiguity.is_none())
+        .map(|access| TargetAccess {
+            path: access.path.clone(),
+            op: access.op.as_str().to_string(),
         })
         .collect()
 }
@@ -198,12 +224,18 @@ fn check(id: &str, case: &Case) {
         "{id}: deletes"
     );
     assert_eq!(fragments(&found), case.expect.ambiguous, "{id}: ambiguous");
+    assert_eq!(
+        directories(&found),
+        case.expect.directories,
+        "{id}: directories"
+    );
 
     // The case names every access, so anything left over is an invented row.
     let named = case.expect.reads.len()
         + case.expect.writes.len()
         + case.expect.deletes.len()
-        + case.expect.ambiguous.len();
+        + case.expect.ambiguous.len()
+        + case.expect.directories.len();
     assert_eq!(
         found.len(),
         named,
@@ -229,7 +261,9 @@ fn check(id: &str, case: &Case) {
 #[test]
 fn every_corpus_case_classifies_the_way_it_says_it_should() {
     let cases = corpus();
-    // A loader that silently found nothing would otherwise pass this test.
+    // A loader that silently found nothing, or only the first file, would
+    // otherwise pass this test. The floor is well under the current count so
+    // that adding cases is never blocked on editing it.
     assert!(cases.len() > 50, "read only {} cases", cases.len());
 
     for (id, case) in &cases {
@@ -237,9 +271,9 @@ fn every_corpus_case_classifies_the_way_it_says_it_should() {
     }
 }
 
-/// The two false positives this feature was built around, asserted as absences.
-/// An early probe reported `1,220p` as a file 1,066 times, and a file descriptor
-/// is the other word in a command that looks like a name and is not one.
+/// The two false positives this feature was built around, asserted as absences:
+/// a script operand and a file descriptor are the words in a command that most
+/// look like names and are not ones.
 #[test]
 fn neither_a_script_operand_nor_a_file_descriptor_is_a_path() {
     let script = accesses(&case("sed-script-first"));
@@ -296,9 +330,37 @@ fn a_utility_outside_the_table_invents_no_file_row() {
     for id in [
         "git-naming-a-path-has-no-file-row",
         "gh-list-has-no-file-row",
-        "find-has-no-file-row",
-        "mkdir-creates-a-directory-not-a-file",
     ] {
         assert_eq!(accesses(&case(id)), [], "{id}");
     }
+}
+
+/// A directory is its own claim: these commands take a directory as their
+/// subject, and saying "file" of `src` would say something the command did not.
+/// `find`'s expression is the other half — `-type f` names no path at all.
+#[test]
+fn a_directory_operand_is_reported_as_a_directory() {
+    assert_eq!(
+        directories(&accesses(&case("find-stops-at-its-expression"))),
+        [
+            TargetAccess {
+                path: "src".to_string(),
+                op: "read".to_string(),
+            },
+            TargetAccess {
+                path: "tests".to_string(),
+                op: "read".to_string(),
+            },
+        ]
+    );
+
+    let listed = accesses(&case("ls-reads-the-directory-it-lists"));
+    assert_eq!(paths(&listed, AccessOperation::Read), Vec::<String>::new());
+    assert_eq!(
+        directories(&listed),
+        [TargetAccess {
+            path: "src".to_string(),
+            op: "read".to_string(),
+        }]
+    );
 }

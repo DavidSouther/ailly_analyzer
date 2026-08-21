@@ -17,7 +17,9 @@ remove-empty-directory:
   command: "rmdir build/empty"
   tags: [delete]
   expect:
-    deletes: ["build/empty"]
+    directories:
+      - path: "build/empty"
+        op: delete
 
 remove-recursive-glob:
   command: "rm -rf build/tmp-*"

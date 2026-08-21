@@ -17,12 +17,12 @@ use ailly_analyzer_lib::model::{FileReference, Harness, SourceValue};
 use std::path::PathBuf;
 use std::{env, fs};
 
-/// Three Bash calls: a command that both reads and writes, a reader whose first
-/// operand is a script, and a glob the shell would have expanded.
+/// Four Bash calls: a command that both reads and writes, a reader whose first
+/// operand is a script, a glob, and an explicit directory.
 const CLAUDE_SESSION: &str = concat!(
     r#"{"type":"user","uuid":"u1","sessionId":"shell-access-claude","cwd":"/work/app","timestamp":"2026-08-20T15:00:00Z","message":{"role":"user","content":"regenerate the env file"}}"#,
     "\n",
-    r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"shell-access-claude","cwd":"/work/app","message":{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"Bash","input":{"command":"cat config/base.yml >> build/out.env"}},{"type":"tool_use","id":"call-2","name":"Bash","input":{"command":"sed -n '1,220p' src/lib.rs"}},{"type":"tool_use","id":"call-3","name":"Bash","input":{"command":"cat logs/*.txt"}}]}}"#,
+    r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"shell-access-claude","cwd":"/work/app","message":{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"Bash","input":{"command":"cat config/base.yml >> build/out.env"}},{"type":"tool_use","id":"call-2","name":"Bash","input":{"command":"sed -n '1,220p' src/lib.rs"}},{"type":"tool_use","id":"call-3","name":"Bash","input":{"command":"cat logs/*.txt"}},{"type":"tool_use","id":"call-4","name":"Bash","input":{"command":"ls ."}}]}}"#,
     "\n",
 );
 
@@ -56,10 +56,16 @@ fn label(value: &SourceValue<String>) -> Option<&str> {
     }
 }
 
-/// One access as a reader would render it: path, operation, provenance, and the
-/// reason it stayed a fragment. Unrecorded reads as `None` rather than as an
-/// empty string, so "the harness did not say" stays distinguishable.
-type Rendered<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<&'a str>);
+/// One access as a reader would render it: path, target, operation, provenance,
+/// and the reason it stayed a fragment. Unrecorded reads as `None` rather than
+/// as an empty string, so "the harness did not say" stays distinguishable.
+type Rendered<'a> = (
+    &'a str,
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<&'a str>,
+);
 
 fn rendered(files: &[FileReference]) -> Vec<Rendered<'_>> {
     files
@@ -67,6 +73,7 @@ fn rendered(files: &[FileReference]) -> Vec<Rendered<'_>> {
         .map(|file| {
             (
                 file.path.as_str(),
+                label(&file.target),
                 label(&file.operation),
                 label(&file.provenance),
                 label(&file.ambiguity),
@@ -128,23 +135,43 @@ fn indexing_a_recorded_command_stores_the_files_it_attempted() {
             .collect()
     };
 
-    // One redirect, one script-first reader, one glob — in the order the
-    // commands named them, each labelled as shell evidence rather than as a
-    // path the harness recorded. The relative operands stay relative: the
-    // session's `/work/app` is context, not a root to resolve against.
+    // In the order the commands named them, each labelled as shell evidence
+    // rather than as a path the harness recorded. The relative operands stay
+    // relative: the session's `/work/app` is context, not a root to resolve
+    // against.
     let claude = files_for(Harness::ClaudeCode);
     assert_eq!(
         rendered(&claude),
         [
-            ("config/base.yml", Some("read"), Some("shell"), None),
-            ("build/out.env", Some("write"), Some("shell"), None),
-            ("src/lib.rs", Some("read"), Some("shell"), None),
+            (
+                "config/base.yml",
+                Some("file"),
+                Some("read"),
+                Some("shell"),
+                None
+            ),
+            (
+                "build/out.env",
+                Some("file"),
+                Some("write"),
+                Some("shell"),
+                None
+            ),
+            (
+                "src/lib.rs",
+                Some("file"),
+                Some("read"),
+                Some("shell"),
+                None
+            ),
             (
                 "logs/*.txt",
+                Some("file"),
                 Some("read"),
                 Some("shell"),
                 Some("glob not expanded")
             ),
+            (".", Some("directory"), Some("read"), Some("shell"), None),
         ]
     );
 
@@ -152,7 +179,13 @@ fn indexing_a_recorded_command_stores_the_files_it_attempted() {
     // a file access list all the same.
     assert_eq!(
         rendered(&files_for(Harness::Codex)),
-        [("build/stale.env", Some("delete"), Some("shell"), None)]
+        [(
+            "build/stale.env",
+            Some("file"),
+            Some("delete"),
+            Some("shell"),
+            None
+        )]
     );
 
     let _ = fs::remove_file(&index_path);

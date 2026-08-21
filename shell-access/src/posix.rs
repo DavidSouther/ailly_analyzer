@@ -8,11 +8,12 @@ use std::path::Path;
 use tree_sitter::{Node, Parser};
 
 use crate::table::{self, FlagValue, Positionals, Utility, Wrapper};
-use crate::{AccessOperation, AmbiguityReason, ClassificationError, FileAccess};
+use crate::{AccessOperation, AccessTarget, AmbiguityReason, ClassificationError, FileAccess};
 
-/// How deep a `sh -c` inside a `sh -c` is followed before the walk gives up.
-/// Recorded commands nest one or two levels; deeper than this is a construction
-/// this crate has no evidence about.
+/// One bound on how far the walk will chase a command that carries another:
+/// `sh -c` inside `sh -c`, and wrappers peeled off a name (`sudo env nice …`).
+/// Recorded commands nest one or two levels either way, so past this the text is
+/// a construction this crate has no evidence about and stops rather than guesses.
 const MAX_NESTING: usize = 8;
 
 type Record = Result<FileAccess, ClassificationError>;
@@ -167,6 +168,9 @@ impl Walk<'_> {
             index += 1;
             let text = literal(operand, source);
             if flags_over || !is_flag(&text) {
+                if utility.expression && opens_expression(&text) {
+                    break;
+                }
                 paths.push(operand);
                 continue;
             }
@@ -177,8 +181,13 @@ impl Walk<'_> {
 
             let (flag_text, attached) = split_flag(&text);
             let Some(spec) = table::find_flag(utility.flags, flag_text) else {
-                // An unknown flag still ends the word inventory for this pass;
-                // it is not itself a path.
+                if utility.expression {
+                    // The utility's expression starts here, and its words are
+                    // tests and arguments rather than names.
+                    break;
+                }
+                // The flag itself is not a path, and the operands after it are
+                // still read under this utility's policy.
                 continue;
             };
 
@@ -204,12 +213,35 @@ impl Walk<'_> {
                 }
                 FlagValue::Read => {
                     if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
-                        self.record_path(path, AccessOperation::Read, scripting, None);
+                        self.record_path(
+                            path,
+                            AccessOperation::Read,
+                            AccessTarget::File,
+                            scripting,
+                            None,
+                        );
                     }
                 }
                 FlagValue::Write => {
                     if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
-                        self.record_path(path, AccessOperation::Write, scripting, None);
+                        self.record_path(
+                            path,
+                            AccessOperation::Write,
+                            AccessTarget::File,
+                            scripting,
+                            None,
+                        );
+                    }
+                }
+                FlagValue::WriteDirectory => {
+                    if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
+                        self.record_path(
+                            path,
+                            AccessOperation::Write,
+                            AccessTarget::Directory,
+                            scripting,
+                            None,
+                        );
                     }
                 }
             }
@@ -217,8 +249,8 @@ impl Walk<'_> {
 
         let total = paths.len();
         for (position, operand) in paths.into_iter().enumerate() {
-            if let Some(op) = operation(positionals, position, total, in_place) {
-                self.record(operand, source, op, scripting);
+            if let Some((op, target)) = operation(positionals, position, total, in_place) {
+                self.record(operand, source, op, target, scripting);
             }
         }
     }
@@ -240,12 +272,13 @@ impl Walk<'_> {
                 if matches!(destination.kind(), "number" | "file_descriptor") {
                     return;
                 }
-                self.record(destination, source, op, scripting);
+                self.record(destination, source, op, AccessTarget::File, scripting);
             }
             "heredoc_redirect" => {
                 if let Some(fragment) = expanded_heredoc(node, source) {
                     self.out.push(Ok(FileAccess {
                         op: AccessOperation::Read,
+                        target: AccessTarget::File,
                         path: fragment,
                         cwd: self.cwd.map(Path::to_path_buf),
                         ambiguity: Some(AmbiguityReason::ExpandedHeredoc),
@@ -267,7 +300,14 @@ impl Walk<'_> {
         }
     }
 
-    fn record(&mut self, operand: Node, source: &str, op: AccessOperation, scripting: bool) {
+    fn record(
+        &mut self,
+        operand: Node,
+        source: &str,
+        op: AccessOperation,
+        target: AccessTarget,
+        scripting: bool,
+    ) {
         // A number is a count or a descriptor, never a name this crate reports.
         if operand.kind() == "number" {
             return;
@@ -276,21 +316,30 @@ impl Walk<'_> {
         if path.is_empty() {
             return;
         }
-        self.record_path(path, op, scripting, ambiguity(operand, source));
+        self.record_path(path, op, target, scripting, ambiguity(operand, source));
     }
 
     fn record_path(
         &mut self,
         path: String,
         op: AccessOperation,
+        target: AccessTarget,
         scripting: bool,
         ambiguity: Option<AmbiguityReason>,
     ) {
         if path.is_empty() {
             return;
         }
+        // A utility's operand policy says what it does with a word; the word's
+        // own spelling can still say the word is a directory, and `rg TODO .`
+        // is the shape where only the second half knows.
+        let target = match target {
+            AccessTarget::File => AccessTarget::of_path(&path),
+            settled => settled,
+        };
         self.out.push(Ok(FileAccess {
             op,
+            target,
             path,
             cwd: self.cwd.map(Path::to_path_buf),
             ambiguity,
@@ -366,26 +415,32 @@ fn operation(
     position: usize,
     total: usize,
     in_place: bool,
-) -> Option<AccessOperation> {
-    let op = match positionals {
-        Positionals::Read => AccessOperation::Read,
+) -> Option<(AccessOperation, AccessTarget)> {
+    let (op, target) = match positionals {
+        Positionals::Read => (AccessOperation::Read, AccessTarget::File),
         Positionals::ScriptThenRead if position == 0 => return None,
-        Positionals::ScriptThenRead => AccessOperation::Read,
+        Positionals::ScriptThenRead => (AccessOperation::Read, AccessTarget::File),
         // A lone operand cannot be a destination: with nothing to copy into it,
         // it is the source and the destination was left implicit.
         Positionals::ReadThenWriteLast if total > 1 && position + 1 == total => {
-            AccessOperation::Write
+            (AccessOperation::Write, AccessTarget::File)
         }
-        Positionals::ReadThenWriteLast => AccessOperation::Read,
-        Positionals::Write => AccessOperation::Write,
-        Positionals::Delete => AccessOperation::Delete,
+        Positionals::ReadThenWriteLast => (AccessOperation::Read, AccessTarget::File),
+        Positionals::Write => (AccessOperation::Write, AccessTarget::File),
+        Positionals::Delete => (AccessOperation::Delete, AccessTarget::File),
+        Positionals::ReadDirectory => (AccessOperation::Read, AccessTarget::Directory),
+        Positionals::WriteDirectory => (AccessOperation::Write, AccessTarget::Directory),
+        Positionals::DeleteDirectory => (AccessOperation::Delete, AccessTarget::Directory),
         Positionals::None => return None,
     };
-    Some(if in_place && op == AccessOperation::Read {
-        AccessOperation::Write
-    } else {
-        op
-    })
+    Some((
+        if in_place && op == AccessOperation::Read {
+            AccessOperation::Write
+        } else {
+            op
+        },
+        target,
+    ))
 }
 
 /// Read or write, or `None` when the redirect only duplicates a descriptor.
@@ -516,6 +571,14 @@ fn command_string(operands: &[Node], source: &str) -> Option<String> {
 
 fn is_flag(text: &str) -> bool {
     text.starts_with('-') && text.len() > 1
+}
+
+/// Whether a word that is not flag-shaped nonetheless begins an expression.
+/// `find`'s grouping and negation operators have to be escaped or quoted to
+/// survive the shell, so they arrive as ordinary words; reading `\(` as a root
+/// would report a directory no command named.
+fn opens_expression(text: &str) -> bool {
+    matches!(text.trim_start_matches('\\'), "(" | ")" | "!" | ",")
 }
 
 /// Why an operand is not a literal name, or `None` when it is one.

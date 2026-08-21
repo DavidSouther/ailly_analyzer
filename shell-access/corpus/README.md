@@ -22,6 +22,7 @@ names are grouping, not schema — every file has the same two documents.
 | `redirects.yaml` | `>`, `>>`, `<`, `2>`, `2>&1`, tree-sitter-bash issue #233 |
 | `writes.yaml` | `tee`, `cp`/`mv`, in-place flags, `touch` |
 | `deletes.yaml` | `rm`, `rmdir` |
+| `directories.yaml` | `ls`, `find`, `du`, `mkdir` — operands that name a directory |
 | `wrappers.yaml` | `env`, `sudo`, `bash -lc`, `timeout`, pipelines, `&&`/`;` lists |
 | `ambiguities.yaml` | globs, expansions, command substitution, heredocs |
 | `scripting.yaml` | `python3 -c`, `perl -e`, `node -e`, `ruby -e` |
@@ -51,13 +52,14 @@ reader-redirect-append:
   reader taking stdin.
 
 `expect` is sparse: every key is dropped rather than written as a default. There
-are no empty `reads`/`writes`/`deletes`/`ambiguous` lists and no
+are no empty `reads`/`writes`/`deletes`/`directories`/`ambiguous` lists and no
 `scripting: false`.
 
 | Key | Meaning |
 |---|---|
-| `reads`, `writes`, `deletes` | literal paths, in the order the classifier emits them |
-| `ambiguous` | `{path, op, reason}` for a fragment the parse refused to resolve |
+| `reads`, `writes`, `deletes` | literal paths that name a **file**, in the order the classifier emits them |
+| `directories` | `{path, op}` for a literal path that names a **directory** |
+| `ambiguous` | `{path, op, reason}` for a fragment the parse refused to resolve, whichever it targets |
 | `scripting` | `true` when every access this command produces is inside an inline interpreter |
 | `error` | `parse` when the command yields a classification error instead of accesses |
 

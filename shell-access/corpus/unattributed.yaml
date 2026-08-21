@@ -12,14 +12,6 @@ gh-list-has-no-file-row:
   command: "gh pr list --limit 5"
   tags: [unattributed]
 
-find-has-no-file-row:
-  command: "find src -name '*.rs'"
-  tags: [unattributed]
-
-mkdir-creates-a-directory-not-a-file:
-  command: "mkdir -p build/logs"
-  tags: [unattributed]
-
 change-directory-is-not-an-access:
   command: "cd src && ls -la"
   tags: [unattributed, compound]

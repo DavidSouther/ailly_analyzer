@@ -77,12 +77,15 @@ export interface SourceGroup {
 }
 
 /**
- * One row of the File access list: everything the session's events said about
- * one file identity, folded together.
+ * One row of the Filesystem list: everything the session's events said about one
+ * filesystem identity, folded together. A directory is one of these rows too,
+ * labelled as one rather than split into a list of its own — a session reaches
+ * paths, and which kind each one is is another label on the row.
  *
- * Identity is `(path, cwd, ambiguity)` — cwd is recorded context and never
- * joined onto `path`. Two relative operands with different working directories
- * are two rows.
+ * Identity is `(target, path, cwd, ambiguity)`, carried on `id` so a renderer
+ * keying rows does not restate it — cwd is recorded context and never joined
+ * onto `path`, so two relative operands with different working directories are
+ * two rows.
  *
  * `path` is a literal name, or — when `ambiguity` is set — the fragment a
  * command wrote where a name would have been. The two are deliberately the same
@@ -90,7 +93,11 @@ export interface SourceGroup {
  * a path.
  */
 export interface FileAccess {
+  /** This row's identity, and the only key a caller should render rows by. */
+  id: string;
   path: string;
+  /** The filesystem object this access is known to target. */
+  target: string;
   /** Recorded working directory for this identity, or null when unrecorded. */
   cwd: string | null;
   /** How many recorded accesses folded into this row. */
@@ -105,7 +112,11 @@ export interface FileAccess {
 
 export interface SessionSummaryStats {
   toolCallCount: number;
-  /** Distinct paths. Ambiguous fragments are accesses but not paths. */
+  /**
+   * Distinct files. Narrower than the Filesystem list on purpose: a directory
+   * is a path the session reached but not a file it touched, and an ambiguous
+   * fragment is an access but not a name that was reached.
+   */
   filesTouchedCount: number;
   duration: SourceValue<string>;
   subagentSpawnCount: SourceValue<number>;
@@ -141,8 +152,9 @@ const CATEGORY_TABLE: Record<string, ToolCategory> = {
   WebFetch: "other",
   WebSearch: "other",
   // Codex's names. `exec` is the name on a `custom_tool_call`, whose command
-  // text lives in a JavaScript snippet this product does not yet recover — but
-  // the call is still an exec, and reading as unclassified said otherwise.
+  // text lives in a JavaScript snippet this product does not yet recover — the
+  // call is still an exec, because the category is a claim about what the call
+  // was rather than about what was read back out of it.
   exec: "exec",
   exec_command: "exec",
   write_stdin: "exec",
@@ -159,8 +171,6 @@ const CATEGORY_ORDER: ToolCategory[] = ["exec", "edit", "read", "other"];
 
 const SOURCE_META: Record<SourceKind, { label: string; missingDetail: string }> = {
   shell: { label: "Shell output", missingDetail: "Command not recorded" },
-  // "File access" names the rendered list of files. This group holds the calls
-  // that named one, which is a different thing.
   file: { label: "File tools", missingDetail: "Path not recorded" },
   web: { label: "Web / API", missingDetail: "Target not recorded" },
 };
@@ -405,7 +415,7 @@ function sourceGroups(calls: RecordedCall[], results: Map<string, ToolResult[]>)
 
 /**
  * Every file access the index attributed to this session's events, folded by
- * identity `(path, cwd, ambiguity)`.
+ * `FileAccess.id`.
  *
  * The index is the only thing that decides what a file access is: a tool that
  * names a path and a command whose operands imply one both arrive here already
@@ -425,9 +435,12 @@ function fileAccesses(events: AillyEvent[]): FileAccess[] {
       }
       const cwd = isRecorded(file.cwd) ? file.cwd.Recorded : null;
       const ambiguity = isRecorded(file.ambiguity) ? file.ambiguity.Recorded : null;
-      const key = `${file.path}\0${cwd ?? ""}\0${ambiguity ?? ""}`;
+      const target = isRecorded(file.target) ? file.target.Recorded : "file";
+      const key = `${target}\0${file.path}\0${cwd ?? ""}\0${ambiguity ?? ""}`;
       const access = byIdentity.get(key) ?? {
+        id: key,
         path: file.path,
+        target,
         cwd,
         touches: 0,
         operations: [],
@@ -497,17 +510,19 @@ function subagentSpawnCount(events: AillyEvent[]): SourceValue<number> {
 export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
   const calls = recordedCalls(events);
   const { categories, unclassified } = categoryTotals(calls);
-  const files = fileAccesses(events);
+  const accesses = fileAccesses(events);
   const results = resultsByCallId(events);
   return {
     toolCallCount: calls.length,
-    filesTouchedCount: files.filter((file) => file.ambiguity === null).length,
+    filesTouchedCount: accesses.filter(
+      (access) => access.target === "file" && access.ambiguity === null,
+    ).length,
     duration: sessionDuration(events),
     subagentSpawnCount: subagentSpawnCount(events),
     categories,
     unclassified,
     toolsByFrequency: toolsByFrequency(calls, results),
     sources: sourceGroups(calls, results),
-    fileAccesses: files,
+    fileAccesses: accesses,
   };
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -63,6 +63,7 @@ const SESSION: SessionListItem = {
  */
 interface FileAccess {
   path: string;
+  target: SourceValue<string>;
   operation: SourceValue<string>;
   provenance: SourceValue<string>;
   ambiguity: SourceValue<string>;
@@ -73,6 +74,7 @@ interface FileAccess {
 function fromTool(path: string, operation: string): FileAccess {
   return {
     path,
+    target: { Recorded: "file" },
     operation: { Recorded: operation },
     provenance: { Recorded: "tool" },
     ambiguity: "Absent",
@@ -84,6 +86,7 @@ function fromTool(path: string, operation: string): FileAccess {
 function fromShell(path: string, operation: string, cwd: string | null = null): FileAccess {
   return {
     path,
+    target: { Recorded: "file" },
     operation: { Recorded: operation },
     provenance: { Recorded: "shell" },
     ambiguity: "Absent",
@@ -95,10 +98,22 @@ function fromShell(path: string, operation: string, cwd: string | null = null): 
 function ambiguous(fragment: string, operation: string, reason: string): FileAccess {
   return {
     path: fragment,
+    target: { Recorded: "file" },
     operation: { Recorded: operation },
     provenance: { Recorded: "shell" },
     ambiguity: { Recorded: reason },
     cwd: "Absent",
+  };
+}
+
+function directory(path: string, operation: string, cwd: string | null = null): FileAccess {
+  return {
+    path,
+    target: { Recorded: "directory" },
+    operation: { Recorded: operation },
+    provenance: { Recorded: "shell" },
+    ambiguity: "Absent",
+    cwd: cwd === null ? "Absent" : { Recorded: cwd },
   };
 }
 
@@ -208,13 +223,13 @@ async function renderApp() {
   render(<App />);
 }
 
-/** The File access row for `path`, as the scope its labels are asserted in. */
+/** The Filesystem row for `path`, as the scope its labels are asserted in. */
 function accessRow(list: HTMLElement, path: string): HTMLElement {
   const row = within(list)
     .getAllByRole("listitem")
     .find((item) => item.textContent?.includes(path));
   if (row === undefined) {
-    throw new Error(`No File access row for ${path}`);
+    throw new Error(`No Filesystem row for ${path}`);
   }
   return row;
 }
@@ -224,7 +239,7 @@ describe("Reviewing the files a session's shell commands touched", () => {
     await renderApp();
 
     const summary = await screen.findByRole("region", { name: /session summary/i });
-    const fileAccess = within(summary).getByRole("list", { name: /file access/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
 
     // A path the harness named in its own field: read, and known to be so
     // because a tool said it, not because anyone read a command.
@@ -296,7 +311,7 @@ describe("Reviewing the files a session's shell commands touched", () => {
     await renderApp();
 
     const summary = await screen.findByRole("region", { name: /session summary/i });
-    const fileAccess = within(summary).getByRole("list", { name: /file access/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
     const rows = within(fileAccess).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent(/config\.toml/);
@@ -305,5 +320,172 @@ describe("Reviewing the files a session's shell commands touched", () => {
     expect(fileAccess).toHaveTextContent("/work/other");
     const tile = within(summary).getByRole("group", { name: /files touched/i });
     expect(within(tile).getByText("2")).toBeInTheDocument();
+  });
+
+  it("reveals and filters files beyond the ranked-list cap", async () => {
+    const files = Array.from({ length: 12 }, (_, index) =>
+      fromShell(`src/generated/file-${index + 1}.ts`, "read"),
+    );
+    eventsBySession = {
+      [SESSION.id]: [
+        toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: "find src -type f" } }, files),
+      ],
+    };
+
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
+    expect(within(fileAccess).getAllByRole("listitem")).toHaveLength(10);
+
+    const filter = within(summary).getByRole("searchbox", { name: /filter paths/i });
+    fireEvent.change(filter, { target: { value: "file-12" } });
+    expect(within(fileAccess).getAllByRole("listitem")).toHaveLength(1);
+    expect(fileAccess).toHaveTextContent("src/generated/file-12.ts");
+
+    fireEvent.change(filter, { target: { value: "" } });
+    fireEvent.click(within(summary).getByRole("button", { name: /show all 12 paths/i }));
+    expect(within(fileAccess).getAllByRole("listitem")).toHaveLength(12);
+    expect(within(summary).getByRole("button", { name: /show fewer paths/i })).toBeInTheDocument();
+  });
+
+  it("hides rows by operation and provenance without changing the files-touched count", async () => {
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
+    const filters = within(summary).getByRole("group", { name: /filesystem filters/i });
+
+    fireEvent.click(within(filters).getByRole("button", { name: /^write$/i }));
+    expect(fileAccess).not.toHaveTextContent(TOOL_WRITE);
+    expect(fileAccess).not.toHaveTextContent(SHELL_WRITE);
+    expect(accessRow(fileAccess, TOOL_READ)).toBeInTheDocument();
+    expect(accessRow(fileAccess, SHELL_READ)).toBeInTheDocument();
+
+    fireEvent.click(within(filters).getByRole("button", { name: /^shell$/i }));
+    expect(fileAccess).not.toHaveTextContent(SHELL_READ);
+    expect(fileAccess).not.toHaveTextContent(SHELL_DELETE);
+    expect(accessRow(fileAccess, TOOL_READ)).toBeInTheDocument();
+
+    const tile = within(summary).getByRole("group", { name: /files touched/i });
+    expect(within(tile).getByText("6")).toBeInTheDocument();
+  });
+
+  it("hides a row that was written even when it was also read", async () => {
+    eventsBySession = {
+      [SESSION.id]: [
+        toolEvent(
+          "evt-1",
+          1,
+          { name: "Bash", command: { Recorded: `sed -i 's/alpha/beta/' ${SHELL_READ}` } },
+          [fromShell(SHELL_READ, "read"), fromShell(SHELL_READ, "write")],
+        ),
+        toolEvent("evt-2", 2, { name: "Read", path: { Recorded: TOOL_READ } }, [
+          fromTool(TOOL_READ, "read"),
+        ]),
+      ],
+    };
+
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
+    expect(accessRow(fileAccess, SHELL_READ)).toHaveTextContent("write");
+
+    const filters = within(summary).getByRole("group", { name: /filesystem filters/i });
+    fireEvent.click(within(filters).getByRole("button", { name: /^write$/i }));
+
+    expect(fileAccess).not.toHaveTextContent(SHELL_READ);
+    expect(accessRow(fileAccess, TOOL_READ)).toBeInTheDocument();
+  });
+
+  it("isolates a label on a second click and stops filtering on a third", async () => {
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
+    const filters = within(summary).getByRole("group", { name: /filesystem filters/i });
+    const clickAmbiguous = () =>
+      fireEvent.click(within(filters).getByRole("button", { name: /ambiguous/i }));
+
+    clickAmbiguous();
+    expect(fileAccess).not.toHaveTextContent(GLOB_FRAGMENT);
+    expect(accessRow(fileAccess, TOOL_READ)).toBeInTheDocument();
+
+    clickAmbiguous();
+    expect(within(filters).getByRole("button", { name: /^only ambiguous$/i })).toBeInTheDocument();
+    expect(within(fileAccess).getAllByRole("listitem")).toHaveLength(1);
+    expect(fileAccess).toHaveTextContent(GLOB_FRAGMENT);
+
+    clickAmbiguous();
+    expect(accessRow(fileAccess, TOOL_READ)).toBeInTheDocument();
+    expect(fileAccess).toHaveTextContent(GLOB_FRAGMENT);
+  });
+
+  /**
+   * Isolating widens inside one dimension and narrows across them, which is the
+   * rule the two clicks below are the smallest statement of.
+   */
+  it("isolates either operation within a dimension and both conditions across them", async () => {
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const fileAccess = within(summary).getByRole("list", { name: /filesystem/i });
+    const filters = within(summary).getByRole("group", { name: /filesystem filters/i });
+    // A chip's accessible name gains its state, so the second click looks the
+    // label up by prefix rather than by the name the first click left behind.
+    const isolate = (label: string) => {
+      const chip = () =>
+        within(filters).getByRole("button", { name: new RegExp(`^${label}`, "i") });
+      fireEvent.click(chip());
+      fireEvent.click(chip());
+    };
+
+    isolate("write");
+    isolate("delete");
+    expect(accessRow(fileAccess, TOOL_WRITE)).toBeInTheDocument();
+    expect(accessRow(fileAccess, SHELL_DELETE)).toBeInTheDocument();
+    expect(fileAccess).not.toHaveTextContent(TOOL_READ);
+
+    isolate("shell");
+    expect(accessRow(fileAccess, SHELL_WRITE)).toBeInTheDocument();
+    expect(accessRow(fileAccess, SHELL_DELETE)).toBeInTheDocument();
+    expect(fileAccess).not.toHaveTextContent(TOOL_WRITE);
+  });
+
+  it("labels a directory in the same list and filters by that label", async () => {
+    eventsBySession = {
+      [SESSION.id]: [
+        toolEvent(
+          "evt-1",
+          1,
+          { name: "Bash", command: { Recorded: "ls ." }, cwd: { Recorded: "/work/app" } },
+          [directory(".", "read", "/work/app")],
+        ),
+        toolEvent("evt-2", 2, { name: "Read", path: { Recorded: TOOL_READ } }, [
+          fromTool(TOOL_READ, "read"),
+        ]),
+      ],
+    };
+
+    await renderApp();
+
+    const summary = await screen.findByRole("region", { name: /session summary/i });
+    const filesystem = within(summary).getByRole("list", { name: /^filesystem$/i });
+    expect(accessRow(filesystem, ".")).toHaveTextContent("directory");
+    expect(accessRow(filesystem, ".")).toHaveTextContent("/work/app");
+    expect(accessRow(filesystem, TOOL_READ)).not.toHaveTextContent("directory");
+    // The tile counts files, and a directory the session listed is not one.
+    expect(within(summary).getByRole("group", { name: /files touched/i })).toHaveTextContent("1");
+
+    const filters = within(summary).getByRole("group", { name: /filesystem filters/i });
+    const chip = () => within(filters).getByRole("button", { name: /^(only )?directory/i });
+    fireEvent.click(chip());
+    expect(filesystem).not.toHaveTextContent("/work/app");
+    expect(accessRow(filesystem, TOOL_READ)).toBeInTheDocument();
+
+    fireEvent.click(chip());
+    expect(within(filesystem).getAllByRole("listitem")).toHaveLength(1);
+    expect(filesystem).toHaveTextContent("/work/app");
   });
 });

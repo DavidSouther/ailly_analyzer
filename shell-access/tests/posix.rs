@@ -7,6 +7,7 @@
 
 use shell_access::{
     AccessOperation::{self, Delete, Read, Write},
+    AccessTarget::{Directory, File},
     AmbiguityReason, ClassificationError, Classifier, FileAccess, ShellLanguage,
 };
 
@@ -42,6 +43,7 @@ fn classifies_literal_reader_and_redirects() {
         [
             FileAccess {
                 op: Read,
+                target: File,
                 path: "config/base.yml".to_string(),
                 cwd: Some("/work/app".into()),
                 ambiguity: None,
@@ -49,6 +51,7 @@ fn classifies_literal_reader_and_redirects() {
             },
             FileAccess {
                 op: Write,
+                target: File,
                 path: "build/out.env".to_string(),
                 cwd: Some("/work/app".into()),
                 ambiguity: None,
@@ -58,8 +61,8 @@ fn classifies_literal_reader_and_redirects() {
     );
 }
 
-/// The regression an early probe produced 1,066 times: the parse succeeded and
-/// reported `1,220p` as a file with complete confidence.
+/// A script operand looks exactly like a name, so a parse that only inventories
+/// words reports `1,220p` as a file with complete confidence.
 #[test]
 fn a_script_operand_is_not_a_file() {
     assert_eq!(
@@ -68,8 +71,8 @@ fn a_script_operand_is_not_a_file() {
     );
 }
 
-/// The other confident falsehood from the same probe: `2` became a top write
-/// destination corpus-wide.
+/// The other word that looks like a name and is not one: a descriptor before a
+/// redirect operator is a channel, so `2` is never a write destination.
 #[test]
 fn a_file_descriptor_is_not_a_path() {
     assert_eq!(
@@ -204,7 +207,6 @@ fn stdin_only_readers_and_unknown_utilities_report_nothing() {
     assert_eq!(attributed("cat"), []);
     assert_eq!(attributed("cat config/base.yml | wc -l").len(), 1);
     assert_eq!(attributed("git diff --stat config/base.yml"), []);
-    assert_eq!(attributed("mkdir -p build/logs"), []);
 }
 
 /// An inline interpreter's script is not attributed. The literal redirect around
@@ -248,7 +250,10 @@ fn a_compound_command_with_a_later_parse_error_keeps_the_prefix() {
     let records: Vec<_> = Classifier::POSIX
         .classify("cat config/base.yml && echo 'unterminated")
         .collect();
-    assert!(matches!(records.last(), Some(Err(ClassificationError::Parse))));
+    assert!(matches!(
+        records.last(),
+        Some(Err(ClassificationError::Parse))
+    ));
     assert_eq!(
         records
             .iter()
@@ -341,11 +346,87 @@ fn grep_file_flag_is_a_read() {
 
 #[test]
 fn cp_target_directory_flag_is_a_write() {
-    assert_eq!(
-        attributed("cp -t build/ config/base.yml"),
-        [
-            (Write, "build/".to_string()),
-            (Read, "config/base.yml".to_string()),
-        ]
-    );
+    // Slash-free, so the flag's own policy is what makes this a directory.
+    let accesses = accesses("cp -t build config/base.yml");
+    assert_eq!(accesses[0].op, Write);
+    assert_eq!(accesses[0].target, Directory);
+    assert_eq!(accesses[0].path, "build");
+    assert_eq!(accesses[1].target, File);
+    assert_eq!(accesses[1].path, "config/base.yml");
+}
+
+/// Every operand here is spelled as a bare name, so the utility's own operand
+/// policy is the only thing that can be reporting a directory.
+#[test]
+fn directory_operands_are_not_files() {
+    let listed = accesses("ls src");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].op, Read);
+    assert_eq!(listed[0].target, Directory);
+    assert_eq!(listed[0].path, "src");
+
+    let created = accesses("mkdir build");
+    assert_eq!(created[0].target, Directory);
+    assert_eq!(created[0].op, Write);
+
+    let removed = accesses("rmdir build");
+    assert_eq!(removed[0].target, Directory);
+    assert_eq!(removed[0].op, Delete);
+
+    // A directory reader can still be told to write a file.
+    let listing = accesses("tree -o build/tree.txt src");
+    assert_eq!(listing[0].op, Write);
+    assert_eq!(listing[0].target, File);
+    assert_eq!(listing[0].path, "build/tree.txt");
+    assert_eq!(listing[1].target, Directory);
+    assert_eq!(listing[1].path, "src");
+}
+
+/// `find` walks roots and then evaluates an expression. The roots are
+/// directories it read; the expression's words are tests and their arguments,
+/// and `'*.rs'` is not a name however much it looks like one.
+#[test]
+fn find_reads_its_roots_and_attributes_nothing_in_its_expression() {
+    let walked = accesses("find src tests -name '*.rs' -exec rm {} ;");
+    assert_eq!(walked.len(), 2);
+    assert_eq!(walked[0].path, "src");
+    assert_eq!(walked[0].target, Directory);
+    assert_eq!(walked[0].op, Read);
+    assert_eq!(walked[1].path, "tests");
+    assert_eq!(walked[1].target, Directory);
+
+    // A leading option is declared, so it does not end the roots early.
+    let followed = accesses("find -L src -type d");
+    assert_eq!(followed.len(), 1);
+    assert_eq!(followed[0].path, "src");
+    assert_eq!(followed[0].target, Directory);
+
+    // Grouping and negation have to be escaped to survive the shell, so they
+    // arrive as ordinary words. Reading one as a root would name a directory no
+    // command wrote.
+    for grouped in [
+        "find . \\( -name '*.rs' -o -name '*.md' \\)",
+        "find . ! -name '*.rs'",
+    ] {
+        assert_eq!(attributed(grouped), [(Read, ".".to_string())], "{grouped}");
+    }
+}
+
+#[test]
+fn a_directory_spelling_outranks_the_utility_operand_shape() {
+    let searched = accesses("rg TODO .");
+    assert_eq!(searched.len(), 1);
+    assert_eq!(searched[0].path, ".");
+    assert_eq!(searched[0].target, Directory);
+    assert_eq!(searched[0].op, Read);
+
+    let recursed = accesses("grep -rn TODO src/");
+    assert_eq!(recursed[0].path, "src/");
+    assert_eq!(recursed[0].target, Directory);
+
+    let copied = accesses("cp src/main.rs build/");
+    assert_eq!(copied[1].path, "build/");
+    assert_eq!(copied[1].target, Directory);
+    assert_eq!(copied[1].op, Write);
+    assert_eq!(copied[0].target, File);
 }
