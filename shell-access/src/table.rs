@@ -284,6 +284,30 @@ const RIPGREP: Utility = Utility {
     expression: false,
 };
 
+/// `ack` and `ag` take the same context and count flags as `rg`, but not its
+/// `-r`: there `-r` is recursion and takes no value, so borrowing ripgrep's
+/// declaration would consume the search pattern and leave the command silent.
+const ACK: Utility = Utility {
+    positionals: Positionals::ScriptThenRead,
+    flags: &[
+        flag("-A", FlagValue::Ignored),
+        flag("-B", FlagValue::Ignored),
+        flag("-C", FlagValue::Ignored),
+        flag("-m", FlagValue::Ignored),
+        flag("-G", FlagValue::Ignored),
+        flag("--max-count", FlagValue::Ignored),
+        flag("--after-context", FlagValue::Ignored),
+        flag("--before-context", FlagValue::Ignored),
+        flag("--context", FlagValue::Ignored),
+        flag("--ignore-dir", FlagValue::Ignored),
+        flag("--ignore-file", FlagValue::Ignored),
+        flag("--color", FlagValue::Ignored),
+        flag("--colour", FlagValue::Ignored),
+    ],
+    scripting: false,
+    expression: false,
+};
+
 const JQ: Utility = Utility {
     positionals: Positionals::ScriptThenRead,
     flags: &[
@@ -333,6 +357,34 @@ const COPY: Utility = Utility {
             FlagValue::WriteDirectory,
             Positionals::Read,
         ),
+        flag("--suffix", FlagValue::Ignored),
+    ],
+    scripting: false,
+    expression: false,
+};
+
+/// `install` places files like `cp`, but its mode and ownership flags take
+/// values that are not paths, and `-d` makes every operand a directory it
+/// creates instead of a file it writes. Declaring them is what keeps `root` in
+/// `install -o root src dst` from being reported as a file.
+const INSTALL: Utility = Utility {
+    positionals: Positionals::ReadThenWriteLast,
+    flags: &[
+        flag_mode("-t", FlagValue::WriteDirectory, Positionals::Read),
+        flag_mode(
+            "--target-directory",
+            FlagValue::WriteDirectory,
+            Positionals::Read,
+        ),
+        flag_mode("-d", FlagValue::None, Positionals::WriteDirectory),
+        flag_mode("--directory", FlagValue::None, Positionals::WriteDirectory),
+        flag("-m", FlagValue::Ignored),
+        flag("-o", FlagValue::Ignored),
+        flag("-g", FlagValue::Ignored),
+        flag("-S", FlagValue::Ignored),
+        flag("--mode", FlagValue::Ignored),
+        flag("--owner", FlagValue::Ignored),
+        flag("--group", FlagValue::Ignored),
         flag("--suffix", FlagValue::Ignored),
     ],
     scripting: false,
@@ -443,12 +495,14 @@ pub(crate) fn lookup(name: &str) -> Option<&'static Utility> {
         "sed" => &SED,
         "awk" | "gawk" | "nawk" | "mawk" => &AWK,
         "grep" | "egrep" | "fgrep" => &GREP,
-        "rg" | "ag" | "ack" => &RIPGREP,
+        "rg" => &RIPGREP,
+        "ag" | "ack" => &ACK,
         "jq" | "yq" => &JQ,
         "tee" => &TEE,
         "touch" => &TOUCH,
         "truncate" => &TRUNCATE,
-        "cp" | "mv" | "install" | "ln" => &COPY,
+        "cp" | "mv" | "ln" => &COPY,
+        "install" => &INSTALL,
         "rm" | "unlink" | "shred" => &REMOVE,
         "ls" | "dir" | "vdir" => &LIST,
         "find" => &FIND,

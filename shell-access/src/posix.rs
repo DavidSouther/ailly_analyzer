@@ -196,6 +196,12 @@ impl Walk<'_> {
             }
             if spec.in_place {
                 in_place = true;
+                // BSD spells the in-place suffix as a separate empty word
+                // (`sed -i '' …`) where GNU attaches it. Left unconsumed it
+                // takes a positional slot and shifts every path after it.
+                if attached.is_none() && next_is_empty(operands, index, source) {
+                    index += 1;
+                }
             }
 
             match spec.value {
@@ -212,35 +218,41 @@ impl Walk<'_> {
                     }
                 }
                 FlagValue::Read => {
-                    if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
+                    if let Some((path, ambiguity)) =
+                        flag_value_path(operand, attached, operands, &mut index, source)
+                    {
                         self.record_path(
                             path,
                             AccessOperation::Read,
                             AccessTarget::File,
                             scripting,
-                            None,
+                            ambiguity,
                         );
                     }
                 }
                 FlagValue::Write => {
-                    if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
+                    if let Some((path, ambiguity)) =
+                        flag_value_path(operand, attached, operands, &mut index, source)
+                    {
                         self.record_path(
                             path,
                             AccessOperation::Write,
                             AccessTarget::File,
                             scripting,
-                            None,
+                            ambiguity,
                         );
                     }
                 }
                 FlagValue::WriteDirectory => {
-                    if let Some(path) = flag_value_path(attached, operands, &mut index, source) {
+                    if let Some((path, ambiguity)) =
+                        flag_value_path(operand, attached, operands, &mut index, source)
+                    {
                         self.record_path(
                             path,
                             AccessOperation::Write,
                             AccessTarget::Directory,
                             scripting,
-                            None,
+                            ambiguity,
                         );
                     }
                 }
@@ -378,15 +390,18 @@ impl Walk<'_> {
 }
 
 /// The value a file-valued flag took: the attached `--flag=value` form, or the
-/// next operand when the forms are separate.
-fn flag_value_path(
+/// next operand when the forms are separate. The reason a value stayed a
+/// fragment travels with it, so `sort -o $OUT` is as ambiguous here as
+/// `tee $OUT` is as a positional.
+fn flag_value_path<'t>(
+    flag: Node<'t>,
     attached: Option<&str>,
-    operands: &[Node],
+    operands: &[Node<'t>],
     index: &mut usize,
     source: &str,
-) -> Option<String> {
+) -> Option<(String, Option<AmbiguityReason>)> {
     if let Some(attached) = attached {
-        return Some(attached.to_string());
+        return Some((attached.to_string(), ambiguity(flag, source)));
     }
     let operand = *operands.get(*index)?;
     *index += 1;
@@ -394,8 +409,16 @@ fn flag_value_path(
     if path.is_empty() {
         None
     } else {
-        Some(path)
+        Some((path, ambiguity(operand, source)))
     }
+}
+
+/// True when the next operand is an empty word, which only a quoted `''` or
+/// `""` can be.
+fn next_is_empty(operands: &[Node], index: usize, source: &str) -> bool {
+    operands
+        .get(index)
+        .is_some_and(|operand| literal(*operand, source).is_empty())
 }
 
 /// Splits `--flag=value` (and `-o=value`) into the flag spelling and its

@@ -333,6 +333,76 @@ fn sort_output_flag_is_a_write_in_separate_and_attached_forms() {
     );
 }
 
+/// A flag's value is an operand like any other, so the reason it stayed a
+/// fragment has to travel with it. Without this the crate resolves `$OUT` into a
+/// path it has no evidence for, which every positional already refuses to do.
+#[test]
+fn a_flag_value_keeps_the_reason_it_stayed_a_fragment() {
+    let separate = accesses("sort -o $OUT src/a.txt");
+    assert_eq!(separate[0].path, "$OUT");
+    assert_eq!(separate[0].ambiguity, Some(AmbiguityReason::Expansion));
+
+    let attached = accesses("sort --output=$OUT src/a.txt");
+    assert_eq!(attached[0].path, "$OUT");
+    assert_eq!(attached[0].ambiguity, Some(AmbiguityReason::Expansion));
+
+    let glob = accesses("sort -o build/out*.env src/a.txt");
+    assert_eq!(glob[0].ambiguity, Some(AmbiguityReason::Glob));
+
+    let script = accesses("sed -f $SCRIPT src/a.txt");
+    assert_eq!(script[0].path, "$SCRIPT");
+    assert_eq!(script[0].ambiguity, Some(AmbiguityReason::Expansion));
+}
+
+/// BSD spells `sed`'s in-place suffix as a separate empty word where GNU
+/// attaches it. Unconsumed, the empty word takes the script's operand slot and
+/// pushes the script into a path — reporting `s/a/b/` as a written directory,
+/// because its trailing slash spells one.
+#[test]
+fn the_bsd_in_place_suffix_is_not_an_operand() {
+    assert_eq!(
+        attributed("sed -i '' 's/old/new/' src/a.txt"),
+        [(Write, "src/a.txt".to_string())]
+    );
+    assert_eq!(
+        attributed("sed -i.bak 's/old/new/' src/a.txt"),
+        [(Write, "src/a.txt".to_string())]
+    );
+}
+
+/// A declared utility whose flag list is missing a value-taking flag is worse
+/// than an undeclared one: the flag's value falls through as a positional, so
+/// `root` and `wheel` are reported as files, and the extra operands also shift
+/// which one is called the destination.
+#[test]
+fn install_mode_and_ownership_values_are_not_paths() {
+    assert_eq!(
+        attributed("install -o root -g wheel -m 755 build/app /usr/local/bin/app"),
+        [
+            (Read, "build/app".to_string()),
+            (Write, "/usr/local/bin/app".to_string()),
+        ]
+    );
+
+    let made = accesses("install -d build/logs");
+    assert_eq!(made[0].op, Write);
+    assert_eq!(made[0].target, Directory);
+    assert_eq!(made[0].path, "build/logs");
+}
+
+/// `ack` and `ag` spell `-r` as recursion, taking no value, while ripgrep's
+/// `-r` is `--replace` and takes one. Sharing ripgrep's declaration ate the
+/// search pattern and left the command reporting nothing at all.
+#[test]
+fn ack_and_ag_do_not_borrow_ripgreps_replace_flag() {
+    assert_eq!(attributed("ack -r needle src"), [(Read, "src".to_string())]);
+    assert_eq!(attributed("ag -r needle src"), [(Read, "src".to_string())]);
+    assert_eq!(
+        attributed("rg -r replacement needle src"),
+        [(Read, "src".to_string())]
+    );
+}
+
 #[test]
 fn grep_file_flag_is_a_read() {
     assert_eq!(

@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 /// has to bump this. A mismatch means the index is deleted and rebuilt, never
 /// migrated: an index written under older rules holds answers the current rules
 /// would not give, and half-old derived values are worse than a rebuild.
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 14;
 
 pub fn open_connection(path: &std::path::Path) -> rusqlite::Result<Connection> {
     let mut conn = Connection::open(path)?;
