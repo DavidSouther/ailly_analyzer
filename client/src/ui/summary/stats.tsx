@@ -11,14 +11,6 @@ import { toolIcon } from "../toolIcons";
 import { cn } from "../utils";
 import type { FileAccess, SourceCall, ToolCategory, ToolFrequency } from "./rollup";
 
-/**
- * The vocabulary every lens over a session's activity shares: labelled stat
- * tiles, ranked lists, the filterable Filesystem list, and one word for
- * absence. The Subagents tab folds a child session with the same
- * `summarizeSession` the Summary pane uses, so it renders the result with these
- * same components rather than a lookalike set.
- */
-
 /** How many rows a ranked list shows before it caps with a visible "+N more". */
 export const LIST_CAP = 10;
 
@@ -68,10 +60,6 @@ export function MoreRow({ hidden, noun }: { hidden: number; noun: string }) {
   );
 }
 
-/**
- * Ranked tools, each expandable into the individual calls it made — command,
- * path, or URL, with captured output on demand.
- */
 export function CallsByTool({
   tools,
   project,
@@ -133,7 +121,6 @@ function ToolCallsRow({ tool, sessionCwd }: { tool: ToolFrequency; sessionCwd: s
   );
 }
 
-/** One call, expanding to what it captured. */
 function CallRow({ call, sessionCwd }: { call: SourceCall; sessionCwd: string | null }) {
   const [open, setOpen] = useState(false);
   const showCwd = shouldShowToolCwd({ cwd: call.cwd, path: call.path, sessionCwd });
@@ -191,19 +178,9 @@ const PROVENANCE_ORDER = ["tool", "shell"];
 const AMBIGUOUS = "ambiguous";
 const DIRECTORY = "directory";
 
-/**
- * Which question a label answers: the operations a row was part of, where the
- * claim came from, whether its name had to be resolved, and what kind of thing
- * it names. Isolating labels means different things within a dimension than
- * across them, which is what these groupings are for.
- */
 type Dimension = "operation" | "source" | "ambiguity" | "kind";
 const DIMENSIONS: Dimension[] = ["operation", "source", "ambiguity", "kind"];
 
-/**
- * What one chip is doing: hiding the rows that carry its label, keeping only
- * those rows, or nothing at all, which is what a label with no entry means.
- */
 type ChipState = "hidden" | "only";
 
 function labelsInOrder(present: Iterable<string>, preferred: string[]): string[] {
@@ -212,12 +189,7 @@ function labelsInOrder(present: Iterable<string>, preferred: string[]): string[]
   return [...preferred.filter((label) => seen.has(label)), ...rest];
 }
 
-/**
- * A toggle carries the colour of the chip it hides, so the control and the row
- * it acts on read as the same thing. The colour is decided here, where an
- * operation is still known to be an operation rather than a bare string a
- * lookup would have to guess at.
- */
+/** Pick the colour while the label's dimension is still known. */
 interface AccessFilter {
   label: string;
   color: BadgeColor;
@@ -281,14 +253,13 @@ function fileLabels(file: FileAccess): Record<Dimension, string[]> {
   };
 }
 
-/** What the next click on a chip will do, which is how the cycle is taught. */
 const CHIP_HINT: Record<ChipState | "shown", (label: string) => string> = {
   shown: (label) => `Hide ${label}`,
   hidden: (label) => `Show only ${label}`,
   only: (label) => `Stop filtering by ${label}`,
 };
 
-/** One click hides a label, the next keeps only it, the third stops filtering. */
+/** Cycle: shown → hidden → only → shown. */
 function nextChipState(
   current: ReadonlyMap<string, ChipState>,
   label: string,
@@ -306,14 +277,8 @@ function nextChipState(
 }
 
 /**
- * Hiding a label hides every row that carries it: a row that was read and also
- * written is still a row that was written, so hiding `write` drops it.
- *
- * Isolating widens within one dimension and narrows across them — `read` and
- * `write` alone means either operation, while `read` and `shell` alone means
- * both at once. That is what the two readings of "only" mean in a sentence, and
- * the alternative would make an isolated pair either impossible to satisfy or
- * indistinguishable from no filter at all.
+ * Hidden labels exclude any row carrying that label. ‘Only’ labels are ORed
+ * within a dimension and ANDed across dimensions.
  */
 function fileMatchesToggles(
   file: FileAccess,
@@ -406,9 +371,9 @@ export function FilesystemList({ files }: { files: FileAccess[] }) {
                 key={label}
                 type="button"
                 // `aria-pressed` announces that a click did something; the name
-                // says which of the two filtering states it landed in. A struck
-                // -through label needs that said in words, while the isolated
-                // one already reads "only …" on its face.
+                // says which of the two filtering states it landed in. A
+                // struck-through label needs that said in words, while the
+                // isolated one already reads "only …" on its face.
                 aria-pressed={state !== undefined}
                 aria-label={state === "hidden" ? `${label}, hidden` : undefined}
                 title={CHIP_HINT[state ?? "shown"](label)}

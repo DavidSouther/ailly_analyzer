@@ -445,17 +445,13 @@ function fileAccesses(events: AillyEvent[]): FileAccess[] {
         touches: 0,
         operations: [],
         provenances: [],
-        ambiguity: null,
+        // Part of the identity above, so every access folding into this row
+        // carries the same reason — or the same absence of one.
+        ambiguity,
       };
       access.touches += 1;
       addLabel(access.operations, file.operation);
       addLabel(access.provenances, file.provenance);
-      // A name one event resolved and another could not stays ambiguous: the
-      // reason is the more surprising half, and dropping it would claim more
-      // certainty than the session has.
-      if (access.ambiguity === null && ambiguity !== null) {
-        access.ambiguity = ambiguity;
-      }
       byIdentity.set(key, access);
     }
   }
@@ -506,7 +502,11 @@ function subagentSpawnCount(events: AillyEvent[]): SourceValue<number> {
   return count === 0 ? "Absent" : { Recorded: count };
 }
 
-/** Every Summary statistic, from one pass over a session's event page. */
+/**
+ * Every Summary statistic. The only entry point: a new statistic is added here
+ * rather than derived inside a component, so two lenses over the same session
+ * cannot disagree about it.
+ */
 export function summarizeSession(events: AillyEvent[]): SessionSummaryStats {
   const calls = recordedCalls(events);
   const { categories, unclassified } = categoryTotals(calls);

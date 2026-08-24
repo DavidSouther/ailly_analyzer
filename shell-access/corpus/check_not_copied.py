@@ -8,8 +8,8 @@ agent session files, which exist on a maintainer's machine and on no build
 machine, so a CI run would always trivially pass and would only be a way to
 believe the check happened. Run it after editing the corpus.
 
-It fails when a corpus `command` is byte-identical (whitespace-normalized) to a
-command some local session recorded. The corpus is meant to be written from the
+It fails when a corpus `command` is identical, after whitespace normalization,
+to a command some local session recorded. The corpus is meant to be written from the
 *shapes* those sessions show, on synthetic paths; an exact match means an
 example was pasted rather than rewritten.
 
@@ -96,7 +96,10 @@ def main() -> int:
         if command in recorded
     ]
     for case, command in sorted(copied):
-        print(f"{case}: command is byte-identical to a recorded one; rewrite it", file=sys.stderr)
+        print(
+            f"{case}: command matches a recorded one once whitespace is normalized; rewrite it",
+            file=sys.stderr,
+        )
     if copied:
         return 1
     print(f"no corpus command matches any of {len(recorded)} commands in {transcripts} transcripts")

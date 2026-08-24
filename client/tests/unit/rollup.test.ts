@@ -256,19 +256,21 @@ describe("summarizeSession", () => {
     );
   });
 
+  // The two accesses are paired here to isolate the identity rule; the reason
+  // string is the classifier's own so this cannot drift from its vocabulary.
   it("keeps resolved and unresolved claims for the same path as separate identities", () => {
     const stats = summarizeSession([
       toolEvent("evt-1", 1, { name: "Bash", command: { Recorded: 'cat "$LOG"' } }, [
-        access("$LOG", "read", "shell", "parameter expansion not resolved"),
+        access("$LOG", "read", "shell", "expansion not resolved"),
       ]),
-      toolEvent("evt-2", 2, { name: "Bash", command: { Recorded: "cat $LOG" } }, [
-        access("$LOG", "read", "shell"),
+      toolEvent("evt-2", 2, { name: "Read", path: { Recorded: "$LOG" } }, [
+        access("$LOG", "read", "tool"),
       ]),
     ]);
 
     expect(stats.fileAccesses).toHaveLength(2);
     expect(stats.fileAccesses.find((file) => file.ambiguity !== null)?.ambiguity).toBe(
-      "parameter expansion not resolved",
+      "expansion not resolved",
     );
     expect(stats.filesTouchedCount).toBe(1);
   });

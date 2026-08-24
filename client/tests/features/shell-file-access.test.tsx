@@ -10,7 +10,6 @@ import {
   type IndexProgress,
   type IndexStatus,
   type SessionListItem,
-  type SourceValue,
   type ToolCall,
 } from "../../src/tauri";
 import { resetSessionsStore } from "../../src/ui/sessions/store";
@@ -56,22 +55,8 @@ const SESSION: SessionListItem = {
   last_activity: { Recorded: "2026-08-20T15:00:00Z" },
 };
 
-/**
- * What the indexer writes into `Event.files`: the two fields `FileReference`
- * already has, plus the two this feature adds — where the claim came from, and
- * why a fragment could not be resolved into a path.
- */
-interface FileAccess {
-  path: string;
-  target: SourceValue<string>;
-  operation: SourceValue<string>;
-  provenance: SourceValue<string>;
-  ambiguity: SourceValue<string>;
-  cwd: SourceValue<string>;
-}
-
 /** A path a dedicated tool field named, so the claim needs no interpretation. */
-function fromTool(path: string, operation: string): FileAccess {
+function fromTool(path: string, operation: string): FileReference {
   return {
     path,
     target: { Recorded: "file" },
@@ -83,7 +68,7 @@ function fromTool(path: string, operation: string): FileAccess {
 }
 
 /** A path read out of recorded command text — evidence, not a disk fact. */
-function fromShell(path: string, operation: string, cwd: string | null = null): FileAccess {
+function fromShell(path: string, operation: string, cwd: string | null = null): FileReference {
   return {
     path,
     target: { Recorded: "file" },
@@ -95,7 +80,7 @@ function fromShell(path: string, operation: string, cwd: string | null = null): 
 }
 
 /** A command operand the parse refused to resolve, kept with its reason. */
-function ambiguous(fragment: string, operation: string, reason: string): FileAccess {
+function ambiguous(fragment: string, operation: string, reason: string): FileReference {
   return {
     path: fragment,
     target: { Recorded: "file" },
@@ -106,7 +91,7 @@ function ambiguous(fragment: string, operation: string, reason: string): FileAcc
   };
 }
 
-function directory(path: string, operation: string, cwd: string | null = null): FileAccess {
+function directory(path: string, operation: string, cwd: string | null = null): FileReference {
   return {
     path,
     target: { Recorded: "directory" },
@@ -149,7 +134,7 @@ function toolEvent(
   id: string,
   ordinal: number,
   tool: Partial<ToolCall> & { name: string },
-  files: FileAccess[],
+  files: FileReference[],
 ): AillyEvent {
   return {
     ...baseEvent(id, ordinal, EventKind.ToolCall),
@@ -164,9 +149,7 @@ function toolEvent(
         ...tool,
       } satisfies ToolCall,
     },
-    // `FileAccess` is `FileReference` plus this feature's two fields, so the
-    // indexed page assigns straight into the existing event shape.
-    files: { Recorded: files satisfies FileReference[] },
+    files: { Recorded: files },
   };
 }
 
