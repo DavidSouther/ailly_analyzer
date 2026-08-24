@@ -64,7 +64,33 @@ design left open:
 - **Filesystem filter state is not in the URL.** The text filter and the
   three-state chips live in component state, so a narrowed view is neither
   shareable nor durable across a reload — the same gap the session-list search
-  chips have, and worth solving once for both.
+  chips have, and worth solving once for both. (`FilesystemList` is now keyed by
+  session so a filter does not leak onto the next session; durability across a
+  reload is what remains.)
+- **A declared utility with an incomplete flag list fabricates rows, and
+  nothing counts it.** When `find_flag` misses, the walk keeps reading and the
+  flag's *value* lands in the positional list — so a missing value-flag
+  declaration invents a file row and also shifts which operand
+  `ReadThenWriteLast` calls the destination. `install` was fixed by declaring
+  its mode and ownership flags; the class is not. This is worse than the
+  unattributed under-report, because the row looks like every other row. Decide
+  whether an undeclared flag on a *declared* utility should stop the operand
+  walk (safe, under-reports) rather than be skipped (fabricates).
+- **A redirect anywhere but the end of a command loses every operand after
+  it.** `operands()` filters `file_redirect` out of a command's children, and
+  tree-sitter-bash's `file_redirect` absorbs the words that follow it, so
+  `cat 2>/dev/null a.txt` reports the write and drops `a.txt`, and
+  `cat 2>&1 a.txt` reports nothing. The trailing form is correct and is the only
+  form the corpus covers. Bounded: `redirect()` already reaches into the node
+  for `destination`, so the remaining children are recoverable as operands.
+- **`FileAccess.scripting` never reaches a reader.** The crate computes it and
+  the corpus asserts it on every case, but `shell/src/index/files.rs` does not
+  map it onto `FileReference`, so "this write is a literal redirect" and "this
+  write came from around an inline interpreter" are indistinguishable in the UI.
+  Either surface it or stop computing it. Relatedly, `attribute`'s `scripting`
+  parameter is hardcoded `false` at its only call site and can only ever be
+  false, because `INTERPRETER` is the only scripting utility and it attributes
+  no positionals.
 - **Shells other than POSIX.** `ShellLanguage` names the seam and
   `AutoDetect` refuses what it cannot read, so fish, zsh-specific, and PowerShell
   rules can arrive without changing the record shape. Nothing implements them.
@@ -77,6 +103,13 @@ design left open:
   tests pin shapes the corpus also pins. Two copies, not three, and each reads
   differently: the unit test states the contract in place, the corpus test binds
   the checked-in data. Left as an aroma.
+- **Comment trims a review named and cleanup did not take.** The false comments
+  were fixed; these are judgement calls left for a reader with taste: roadmap
+  phrasing ("does not yet recover") in `CATEGORY_TABLE` and in `files.rs`'s test
+  DocBlock, the component inventory in `stats.tsx`'s module doc, the
+  `CATEGORY_TABLE` cross-language pointer in `table.rs`, the "early probe"
+  history in `tests/corpus.rs`, and three names (`AccessFilter`, `toggles`,
+  `chips`) for one concept in `stats.tsx`.
 - **Rebuilding an absolute path from a recorded working directory stays out.**
   `cwd` is carried as call context and never joined onto an operand. Reversing
   that would report a fact no command made; it needs a product-boundary decision,
