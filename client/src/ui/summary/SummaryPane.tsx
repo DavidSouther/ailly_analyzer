@@ -108,7 +108,9 @@ function SummaryContent({
         <>
           <CategorySplit stats={breakdown} />
           {breakdown.fileAccesses.length === 0 ? null : (
-            <FilesystemList files={breakdown.fileAccesses} />
+            // Keyed by session: the filter and chips are a view of one
+            // session's paths, so they must not narrow the next one's.
+            <FilesystemList key={events[0]?.session_id} files={breakdown.fileAccesses} />
           )}
           {descendants.status === LoadStatus.Loading ? (
             <p className="text-foreground-muted">Loading subagent tool calls…</p>
