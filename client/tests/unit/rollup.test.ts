@@ -51,13 +51,10 @@ function toolEvent(
         ...tool,
       } satisfies ToolCall,
     },
-    // File access is attributed at index time, so an event carries its accesses
-    // rather than the fold re-deriving them from tool arguments.
     files: files.length === 0 ? "Absent" : { Recorded: files },
   };
 }
 
-/** An access the index attributed, from a tool's own field or from a command. */
 function access(
   path: string,
   operation: string,
@@ -89,7 +86,6 @@ function resultEvent(id: string, ordinal: number, result: Partial<ToolResult>): 
   };
 }
 
-/** Six tool calls, mirroring the feature test's session. */
 const EVENTS: AillyEvent[] = [
   baseEvent("evt-1", 1, EventKind.UserTurn),
   toolEvent("evt-2", 2, { name: "Read", path: { Recorded: SUSPECT_FILE } }, [

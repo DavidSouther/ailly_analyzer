@@ -24,10 +24,8 @@ import {
 } from "./stats";
 
 /**
- * The investigation lens: one session's tool calls folded into totals, a
- * category split, and per-tool rankings whose rows expand into the individual
- * calls (command, path, URL, captured output). Dimensions the source never
- * recorded are labelled as such rather than rendered as zero.
+ * Renders summary statistics and tool activity for one session. Missing source
+ * values remain explicitly unrecorded.
  */
 export function SummaryPane({
   state,

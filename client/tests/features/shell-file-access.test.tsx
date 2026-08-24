@@ -55,7 +55,6 @@ const SESSION: SessionListItem = {
   last_activity: { Recorded: "2026-08-20T15:00:00Z" },
 };
 
-/** A path a dedicated tool field named, so the claim needs no interpretation. */
 function fromTool(path: string, operation: string): FileReference {
   return {
     path,
@@ -67,7 +66,6 @@ function fromTool(path: string, operation: string): FileReference {
   };
 }
 
-/** A path read out of recorded command text — evidence, not a disk fact. */
 function fromShell(path: string, operation: string, cwd: string | null = null): FileReference {
   return {
     path,
@@ -79,7 +77,6 @@ function fromShell(path: string, operation: string, cwd: string | null = null): 
   };
 }
 
-/** A command operand the parse refused to resolve, kept with its reason. */
 function ambiguous(fragment: string, operation: string, reason: string): FileReference {
   return {
     path: fragment,
@@ -153,12 +150,6 @@ function toolEvent(
   };
 }
 
-/**
- * One session that exercises every provenance and operation the list has to
- * tell apart: a dedicated `Read` and `Write` for contrast, a shell command that
- * both reads and writes, a shell delete, a reader whose first operand is a
- * script rather than a file, and a glob the parse must not resolve.
- */
 const EVENTS: AillyEvent[] = [
   toolEvent("evt-1", 1, { name: "Read", path: { Recorded: TOOL_READ } }, [
     fromTool(TOOL_READ, "read"),
@@ -206,7 +197,6 @@ async function renderApp() {
   render(<App />);
 }
 
-/** The Filesystem row for `path`, as the scope its labels are asserted in. */
 function accessRow(list: HTMLElement, path: string): HTMLElement {
   const row = within(list)
     .getAllByRole("listitem")
@@ -405,10 +395,6 @@ describe("Reviewing the files a session's shell commands touched", () => {
     expect(fileAccess).toHaveTextContent(GLOB_FRAGMENT);
   });
 
-  /**
-   * Isolating widens inside one dimension and narrows across them, which is the
-   * rule the two clicks below are the smallest statement of.
-   */
   it("isolates either operation within a dimension and both conditions across them", async () => {
     await renderApp();
 

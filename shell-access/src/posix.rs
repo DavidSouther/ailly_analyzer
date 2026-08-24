@@ -10,10 +10,8 @@ use tree_sitter::{Node, Parser};
 use crate::table::{self, FlagValue, Positionals, Utility, Wrapper};
 use crate::{AccessOperation, AccessTarget, AmbiguityReason, ClassificationError, FileAccess};
 
-/// One bound on how far the walk will chase a command that carries another:
-/// `sh -c` inside `sh -c`, and wrappers peeled off a name (`sudo env nice …`).
-/// Recorded commands nest one or two levels either way, so past this the text is
-/// a construction this crate has no evidence about and stops rather than guesses.
+/// Bounds recursive wrapper and `sh -c` classification. Beyond this depth, stop
+/// attribution rather than guess.
 const MAX_NESTING: usize = 8;
 
 type Record = Result<FileAccess, ClassificationError>;
@@ -421,8 +419,6 @@ fn next_is_empty(operands: &[Node], index: usize, source: &str) -> bool {
         .is_some_and(|operand| literal(*operand, source).is_empty())
 }
 
-/// Splits `--flag=value` (and `-o=value`) into the flag spelling and its
-/// attached value. Separate ` -o out ` forms leave the value for the caller.
 fn split_flag(text: &str) -> (&str, Option<&str>) {
     if text.starts_with("--") || (text.starts_with('-') && text.contains('=')) {
         if let Some((name, value)) = text.split_once('=') {
@@ -432,7 +428,6 @@ fn split_flag(text: &str) -> (&str, Option<&str>) {
     (text, None)
 }
 
-/// Which operation the positional at `position` is, for this utility's shape.
 fn operation(
     positionals: Positionals,
     position: usize,
@@ -466,7 +461,6 @@ fn operation(
     ))
 }
 
-/// Read or write, or `None` when the redirect only duplicates a descriptor.
 fn redirect_operation(node: Node, source: &str) -> Option<AccessOperation> {
     let mut cursor = node.walk();
     let operator = node
@@ -502,8 +496,6 @@ fn expanded_heredoc(node: Node, source: &str) -> Option<String> {
     Some(format!("{operator}{delimiter}"))
 }
 
-/// The operands of one command: everything but its name, its variable
-/// assignments, and its redirects.
 fn operands<'t>(command: Node<'t>) -> Vec<Node<'t>> {
     let mut cursor = command.walk();
     command
@@ -536,7 +528,6 @@ fn basename(text: &str) -> String {
         .to_string()
 }
 
-/// The last command inside a statement, which is the one a redirect belongs to.
 fn last_command<'t>(node: Node<'t>) -> Option<Node<'t>> {
     if node.kind() == "command" {
         return Some(node);
@@ -547,7 +538,6 @@ fn last_command<'t>(node: Node<'t>) -> Option<Node<'t>> {
         .last()
 }
 
-/// Splits a wrapper's own operands from the command it runs.
 fn peel<'t>(
     operands: &[Node<'t>],
     source: &str,
@@ -604,7 +594,6 @@ fn opens_expression(text: &str) -> bool {
     matches!(text.trim_start_matches('\\'), "(" | ")" | "!" | ",")
 }
 
-/// Why an operand is not a literal name, or `None` when it is one.
 fn ambiguity(operand: Node, source: &str) -> Option<AmbiguityReason> {
     if contains_kind(operand, "command_substitution")
         || contains_kind(operand, "process_substitution")

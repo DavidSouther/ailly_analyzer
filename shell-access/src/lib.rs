@@ -1,11 +1,6 @@
-//! Review a recorded POSIX shell session and report which commands attempted to
-//! read from files, write to files, or delete files.
-//!
-//! Every record this crate emits is a fact about *command text*, never about a
-//! disk. Nothing here executes a command, spawns a subprocess, reads the
-//! filesystem, or joins a working directory onto an operand. A word the shell
-//! would have expanded before any utility saw it is reported as ambiguous
-//! rather than resolved into a path or dropped.
+//! Classifies attempted file accesses from recorded POSIX command text. It does
+//! not execute commands or inspect the filesystem; unresolved shell expansions
+//! are reported as ambiguous fragments.
 //!
 //! ```
 //! use shell_access::{AccessOperation, Classifier};
@@ -27,9 +22,8 @@ mod table;
 
 use std::path::{Path, PathBuf};
 
-/// Which shell's rules to read a command under. POSIX shell is the only
-/// implementation; naming the others here is what lets them arrive later
-/// without changing the record shape a caller already consumes.
+/// Selects the shell grammar used for classification. Unsupported languages
+/// return an error and are never interpreted as POSIX.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellLanguage {
     /// Choose an implemented language from the text itself, or refuse.
@@ -110,8 +104,6 @@ pub struct Classifier {
 }
 
 impl AccessOperation {
-    /// The word this operation is reported as, shared by every consumer so the
-    /// index and the UI cannot drift into two vocabularies.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Read => "read",
@@ -122,8 +114,6 @@ impl AccessOperation {
 }
 
 impl AccessTarget {
-    /// The word this target is reported as, shared by every consumer so the
-    /// index and the UI cannot drift into two vocabularies.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::File => "file",
@@ -144,8 +134,6 @@ impl AccessTarget {
 }
 
 impl AmbiguityReason {
-    /// Why the fragment stayed a fragment, phrased for a reader looking at the
-    /// row rather than at the grammar.
     pub fn description(self) -> &'static str {
         match self {
             Self::Glob => "glob not expanded",
@@ -163,7 +151,6 @@ impl Default for Classifier {
 }
 
 impl Classifier {
-    /// POSIX shell with no recorded working directory.
     pub const POSIX: Self = Self {
         language: ShellLanguage::Posix,
         cwd: None,

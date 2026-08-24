@@ -1,14 +1,6 @@
-//! What files one tool call attempted to touch, and how we know.
-//!
-//! This runs where raw transcript fields first become indexed domain values, so
-//! `Event.files` is filled once and every reader — page, FTS row, UI — sees the
-//! same accesses. Two sources feed it and both are labelled: a path a harness
-//! wrote into its own field, and a path read out of recorded command text.
-//!
-//! The second kind is evidence about the command, not a fact about a disk. No
-//! working directory is joined onto it, nothing is checked against the
-//! filesystem, and an operand the shell would have expanded keeps its reason for
-//! staying a fragment.
+//! Attributes file accesses once during indexing. Each access preserves whether
+//! it came from a harness field or command analysis; shell operands are not
+//! resolved against the filesystem.
 
 use crate::model::{Event, FileReference, SourceValue, ToolCall};
 use shell_access::{AccessTarget, Classifier};
@@ -18,8 +10,8 @@ const TOOL: &str = "tool";
 /// A path read out of recorded command text.
 const SHELL: &str = "shell";
 
-/// Every access this event's tool call attempted, appended to whatever the
-/// adapter already recorded. Absent when there is nothing to say.
+/// Appends dedicated-field and command-derived accesses to existing recorded
+/// accesses. Parse errors discard only the failing command fragment.
 pub fn attributed_files(event: &Event) -> SourceValue<Vec<FileReference>> {
     let mut files = match &event.files {
         SourceValue::Recorded(recorded) => recorded.clone(),
@@ -36,8 +28,6 @@ pub fn attributed_files(event: &Event) -> SourceValue<Vec<FileReference>> {
     }
 }
 
-/// The path a file tool named. Needs no interpretation, so it carries no
-/// ambiguity and its operation comes from the tool's own name.
 fn from_dedicated_field(tool: &ToolCall) -> Option<FileReference> {
     let SourceValue::Recorded(path) = &tool.path else {
         return None;
@@ -55,8 +45,6 @@ fn from_dedicated_field(tool: &ToolCall) -> Option<FileReference> {
     })
 }
 
-/// The accesses a recorded command attempted. A command the grammar could not
-/// read is dropped at that point in the stream; earlier successes stay.
 fn from_recorded_command(tool: &ToolCall) -> Vec<FileReference> {
     let SourceValue::Recorded(command) = &tool.command else {
         return Vec::new();
@@ -242,9 +230,7 @@ mod tests {
         assert_eq!(files[1], shell("build/stale.env", "delete"));
     }
 
-    /// Codex's `custom_tool_call` records the invocation as a JavaScript snippet
-    /// with no `command` field. Recovering it is a separate feature; until then
-    /// the call contributes nothing rather than a guess.
+    /// Calls with no recorded command or path contribute no access.
     #[test]
     fn a_call_that_recorded_no_command_and_no_path_contributes_nothing() {
         let event = tool_call("exec", |tool| {

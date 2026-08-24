@@ -11,8 +11,6 @@ use shell_access::{
     AmbiguityReason, ClassificationError, Classifier, FileAccess, ShellLanguage,
 };
 
-/// Every access one command produced, or a panic naming the error, since a test
-/// that silently swallowed the error would assert nothing.
 fn accesses(command: &str) -> Vec<FileAccess> {
     Classifier::POSIX
         .classify(command)
@@ -20,8 +18,6 @@ fn accesses(command: &str) -> Vec<FileAccess> {
         .expect("the command parses")
 }
 
-/// The `(operation, path)` pairs a command produced, which is what most of these
-/// assertions are about.
 fn attributed(command: &str) -> Vec<(AccessOperation, String)> {
     accesses(command)
         .into_iter()
@@ -61,8 +57,6 @@ fn classifies_literal_reader_and_redirects() {
     );
 }
 
-/// A script operand looks exactly like a name, so a parse that only inventories
-/// words reports `1,220p` as a file with complete confidence.
 #[test]
 fn a_script_operand_is_not_a_file() {
     assert_eq!(
@@ -71,8 +65,6 @@ fn a_script_operand_is_not_a_file() {
     );
 }
 
-/// The other word that looks like a name and is not one: a descriptor before a
-/// redirect operator is a channel, so `2` is never a write destination.
 #[test]
 fn a_file_descriptor_is_not_a_path() {
     assert_eq!(
@@ -152,9 +144,6 @@ fn an_in_place_flag_turns_a_read_operand_into_a_write() {
     );
 }
 
-/// An unresolvable operand keeps the same `{op, path}` shape as a literal one.
-/// It is neither dropped nor promoted to a path; the reason is what tells the
-/// two apart.
 #[test]
 fn unresolvable_operands_stay_visible_with_their_reason() {
     let glob = accesses("cat logs/*.txt");
@@ -209,8 +198,6 @@ fn stdin_only_readers_and_unknown_utilities_report_nothing() {
     assert_eq!(attributed("git diff --stat config/base.yml"), []);
 }
 
-/// An inline interpreter's script is not attributed. The literal redirect around
-/// it is, and it says it belongs to a scripted invocation.
 #[test]
 fn an_inline_interpreter_is_scripting_and_its_redirects_are_still_recorded() {
     let accesses = accesses("python3 -c 'print(1)' > build/out.env");
@@ -235,16 +222,12 @@ fn a_compound_command_reports_both_of_its_commands_in_order() {
     );
 }
 
-/// A fragment the grammar cannot read is an error at its place in the stream,
-/// not an "ambiguous" access and not silence.
 #[test]
 fn unparsable_text_is_an_error_rather_than_a_partial_attribution() {
     let records: Vec<_> = Classifier::POSIX.classify("cat 'config/base.yml").collect();
     assert_eq!(records, [Err(ClassificationError::Parse)]);
 }
 
-/// A later unreadable fragment is `Err` at that point; earlier commands still
-/// contribute their accesses.
 #[test]
 fn a_compound_command_with_a_later_parse_error_keeps_the_prefix() {
     let records: Vec<_> = Classifier::POSIX
@@ -291,8 +274,6 @@ fn an_unimplemented_language_is_refused_rather_than_read_as_posix() {
     );
 }
 
-/// The recorded directory is context, copied onto each access and never joined
-/// onto the operand. A relative path stays relative.
 #[test]
 fn a_recorded_directory_is_never_joined_onto_an_operand() {
     let access = &Classifier::POSIX
@@ -354,10 +335,8 @@ fn a_flag_value_keeps_the_reason_it_stayed_a_fragment() {
     assert_eq!(script[0].ambiguity, Some(AmbiguityReason::Expansion));
 }
 
-/// BSD spells `sed`'s in-place suffix as a separate empty word where GNU
-/// attaches it. Unconsumed, the empty word takes the script's operand slot and
-/// pushes the script into a path — reporting `s/a/b/` as a written directory,
-/// because its trailing slash spells one.
+/// BSD `sed -i ''` vs GNU attached suffix; unconsumed empty word steals the
+/// script slot.
 #[test]
 fn the_bsd_in_place_suffix_is_not_an_operand() {
     assert_eq!(

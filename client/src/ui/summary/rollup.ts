@@ -61,14 +61,9 @@ export interface SourceCall {
    * image" and "recorded nothing" are different facts about the call.
    */
   output: SourceValue<string> | null;
-  /** True only when the harness marked the result as an error. */
   outputIsError: boolean;
 }
 
-/**
- * Calls grouped by the kind of outside fact they brought in. Which files were
- * reached is a separate question, answered once by `fileAccesses`.
- */
 export interface SourceGroup {
   kind: SourceKind;
   label: string;
@@ -77,36 +72,21 @@ export interface SourceGroup {
 }
 
 /**
- * One row of the Filesystem list: everything the session's events said about one
- * filesystem identity, folded together. A directory is one of these rows too,
- * labelled as one rather than split into a list of its own — a session reaches
- * paths, and which kind each one is is another label on the row.
- *
- * Identity is `(target, path, cwd, ambiguity)`, carried on `id` so a renderer
- * keying rows does not restate it — cwd is recorded context and never joined
- * onto `path`, so two relative operands with different working directories are
- * two rows.
- *
- * `path` is a literal name, or — when `ambiguity` is set — the fragment a
- * command wrote where a name would have been. The two are deliberately the same
- * row shape with different labels: a fragment is neither hidden nor promoted to
- * a path.
+ * Aggregated accesses keyed by `(target, path, cwd, ambiguity)`. Ambiguous
+ * command fragments remain separate from literal paths.
  */
 export interface FileAccess {
-  /** This row's identity, and the only key a caller should render rows by. */
+  /** Row identity; the only key a caller should render rows by. */
   id: string;
   path: string;
-  /** The filesystem object this access is known to target. */
   target: string;
-  /** Recorded working directory for this identity, or null when unrecorded. */
   cwd: string | null;
-  /** How many recorded accesses folded into this row. */
   touches: number;
-  /** Operations attempted on it (read, write, delete), in first-seen order. */
+  /** First-seen order. */
   operations: string[];
-  /** Who claimed it (a dedicated tool field, shell analysis), first-seen order. */
+  /** First-seen order. */
   provenances: string[];
-  /** Why this row is a fragment rather than a path, or null when it is a path. */
+  /** Unresolved command fragment, or null for a literal path. */
   ambiguity: string | null;
 }
 

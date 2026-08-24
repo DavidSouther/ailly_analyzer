@@ -1,16 +1,6 @@
-//! Which of a utility's operands name files or directories, and which are
-//! something else entirely.
-//!
-//! A parser inventories words; it does not know that `sed`'s first operand is a
-//! script and `tee`'s is a destination. That knowledge is a table, and no
-//! published crate holds one in the shape this needs, so this one is ours to
-//! write and grow.
-//!
-//! It is **additive**, in the same spirit as the client's tool `CATEGORY_TABLE`:
-//! a utility missing from here contributes no file rows at all. That is a
-//! visible under-report, which is the failure this feature can afford. The
-//! alternative — guessing that an unknown utility's operands are files — invents
-//! rows, which is the failure it cannot.
+//! Filesystem-operand rules for supported utilities. The table is additive:
+//! unknown utilities produce no accesses; under-reporting is preferred to
+//! fabricated paths.
 
 /// What a utility's positional operands are, once its flags are set aside.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -345,8 +335,8 @@ const TRUNCATE: Utility = utility(
     ],
 );
 
-/// `cp` and `mv` read every operand but the last and write the last — unless a
-/// target-directory flag names the destination, which makes them all sources.
+/// `cp`/`mv`: read all operands except the destination; `-t` supplies the
+/// destination directory.
 const COPY: Utility = Utility {
     positionals: Positionals::ReadThenWriteLast,
     flags: &[
@@ -395,9 +385,9 @@ const REMOVE: Utility = utility(Positionals::Delete, &[]);
 const MAKE_DIRECTORY: Utility = utility(Positionals::WriteDirectory, &[]);
 const REMOVE_DIRECTORY: Utility = utility(Positionals::DeleteDirectory, &[]);
 
-/// `ls` takes a file as readily as a directory, but a directory is what it is
-/// for, and its operand is reported as one. That is a claim about the kind of
-/// thing named, not about what is on disk — which this crate never checks.
+/// Classify `ls` operands as directories for this model, although `ls` also
+/// accepts files. This is a command-semantics classification, not filesystem
+/// inspection.
 const LIST: Utility = utility(
     Positionals::ReadDirectory,
     &[
@@ -413,10 +403,7 @@ const LIST: Utility = utility(
     ],
 );
 
-/// `find`'s operands are the roots it walks, and everything from its first
-/// undeclared word on is an expression: `-name '*.rs'` is a test and `*.rs` is
-/// its argument, not a path. The leading options that may precede the roots are
-/// declared so they do not end the roots early.
+/// `find`: classify leading roots only; stop at the expression.
 const FIND: Utility = Utility {
     positionals: Positionals::ReadDirectory,
     flags: &[
@@ -457,9 +444,7 @@ const TREE: Utility = utility(
     ],
 );
 
-/// An inline interpreter. Its positionals are not attributed at all: a script
-/// path is not something this crate opens, and script internals are explicitly
-/// out of scope. Redirects around the invocation are still literal shell.
+/// Inline interpreter arguments are not attributed; surrounding redirects are.
 const INTERPRETER: Utility = Utility {
     positionals: Positionals::None,
     flags: &[

@@ -1,15 +1,6 @@
-//! The classifier read against the checked-in corpus of command shapes.
-//!
-//! Each case is one claim about command text: given this command and the
-//! directory a harness recorded for it, these accesses and no others. The "no
-//! others" half is why the corpus exists — the shapes it pins are the ones an
-//! early probe got wrong by reporting a script operand or a file descriptor as a
-//! file, and a passing expectation for the right paths would not have caught
-//! either.
-//!
-//! The corpus is also checked by `corpus/verify_corpus.py`, which enforces its
-//! schema and deidentification. This test enforces the other half: that the
-//! classifier agrees with it.
+//! Each case specifies the complete set of accesses for a command; extra
+//! accesses fail the test. `verify_corpus.py` separately validates corpus schema
+//! and deidentification.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,7 +13,6 @@ use shell_access::{
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/corpus");
 
-/// The first document of a corpus file: the working directory its cases share.
 #[derive(Deserialize)]
 struct Header {
     cwd: Option<String>,
@@ -78,8 +68,6 @@ struct TargetAccess {
     op: String,
 }
 
-/// Every case in every corpus file, each already carrying the working directory
-/// it runs under.
 fn corpus() -> Vec<(String, Case)> {
     let mut files: Vec<_> = fs::read_dir(CORPUS)
         .expect("the corpus directory")
@@ -115,8 +103,6 @@ fn case(id: &str) -> Case {
     case
 }
 
-/// The accesses one case's command produces, with its own errors refused: a
-/// named-shape test asserts what a command reports, not that it parsed.
 fn accesses(case: &Case) -> Vec<FileAccess> {
     let (accesses, errors) = classify(case);
     assert!(errors.is_empty(), "unexpected {errors:?}");
@@ -139,9 +125,7 @@ fn classify(case: &Case) -> (Vec<FileAccess>, Vec<ClassificationError>) {
     (found, errors)
 }
 
-/// Literal paths for one operation, in the order the classifier emitted them.
-/// Fragments are excluded: they are a different kind of claim and the corpus
-/// states them separately.
+/// Ambiguous fragments are asserted separately.
 fn paths(accesses: &[FileAccess], op: AccessOperation) -> Vec<String> {
     accesses
         .iter()
@@ -178,8 +162,6 @@ fn directories(accesses: &[FileAccess]) -> Vec<TargetAccess> {
         .collect()
 }
 
-/// The corpus spells a reason as the enum variant it means, so a renamed variant
-/// fails here rather than quietly matching nothing.
 fn reason(ambiguity: AmbiguityReason) -> &'static str {
     match ambiguity {
         AmbiguityReason::Glob => "glob",

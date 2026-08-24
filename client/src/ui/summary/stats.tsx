@@ -277,7 +277,7 @@ function nextChipState(
 }
 
 /**
- * Hidden labels exclude any row carrying that label. ‘Only’ labels are ORed
+ * Hidden labels exclude any row carrying that label. "Only" labels are ORed
  * within a dimension and ANDed across dimensions.
  */
 function fileMatchesToggles(
@@ -305,15 +305,9 @@ function fileMatchesToggles(
 }
 
 /**
- * Every path a session reached, whether a tool named it or a recorded command
- * implied it. Files and directories share the list: a directory says so on its
- * row, and the chip that labels it also filters by it.
- *
- * Provenance is on every row because the two are not equally certain: a tool
- * field is what the harness recorded, while a shell row is what a command's
- * operands say it would have touched. A row whose name the shell would have
- * expanded is labelled ambiguous and shown with its reason, so it reads as the
- * open question it is rather than as a file that was definitely touched.
+ * Displays indexed filesystem accesses, including directories and ambiguous
+ * fragments. Rows expose provenance and ambiguity and can be filtered by those
+ * labels.
  */
 export function FilesystemList({ files }: { files: FileAccess[] }) {
   const [filter, setFilter] = useState("");
