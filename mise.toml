@@ -1,6 +1,9 @@
 [tools]
 node = "22"
 rust = "stable"
+# The corpus verifier declares its own dependencies inline; uv resolves them and
+# the Python it needs, so neither is a machine-level prerequisite.
+uv = "latest"
 
 [tasks.deps]
 description = "Install client dependencies"

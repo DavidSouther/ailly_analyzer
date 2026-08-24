@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """Local-only: confirm no corpus command was copied out of a real transcript.
 
-    python3 shell-access/corpus/check_not_copied.py
+    uv run --script shell-access/corpus/check_not_copied.py
 
 This is a maintainer utility, deliberately **not** a CI job. It reads local
 agent session files, which exist on a maintainer's machine and on no build

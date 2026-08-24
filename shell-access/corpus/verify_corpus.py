@@ -1,9 +1,13 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """Check the shell-access corpus: schema, shape coverage, and deidentification.
 
 Run from anywhere; it reads only the YAML files beside it.
 
-    python3 shell-access/corpus/verify_corpus.py
+    uv run --script shell-access/corpus/verify_corpus.py
 
 Exit 0 means every case is well-formed, every shape the classifier has to get
 right is represented, ids are unique across files, and no machine, user, or

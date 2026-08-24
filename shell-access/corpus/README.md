@@ -70,8 +70,8 @@ relative operand stays relative.
 ## Checks
 
 ```sh
-python3 shell-access/corpus/verify_corpus.py     # CI: schema, coverage, denylist
-python3 shell-access/corpus/check_not_copied.py  # local only, see below
+uv run --script shell-access/corpus/verify_corpus.py     # CI: schema, coverage, denylist
+uv run --script shell-access/corpus/check_not_copied.py  # local only, see below
 ```
 
 `verify_corpus.py` fails on an unknown key or tag, a missing `command`/`tags`, a

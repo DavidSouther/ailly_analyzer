@@ -4,7 +4,10 @@ run = "cargo fmt"
 
 [tasks.check]
 description = "Verify the command corpus, then run Clippy with warnings denied"
-run = ["python3 corpus/verify_corpus.py", "cargo clippy --all-targets -- -D warnings"]
+run = [
+  "uv run --script corpus/verify_corpus.py",
+  "cargo clippy --all-targets -- -D warnings",
+]
 
 [tasks.test]
 description = "Run the classifier tests"
